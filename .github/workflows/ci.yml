@@ -53,6 +53,15 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Check Cloudflare deployment
+        if: matrix.node-version == '24'
+        env:
+          WRANGLER_SEND_METRICS: "false"
+        run: |
+          npm run check:cloudflare
+          npm run build:cloudflare
+          npm run test:cloudflare:runtime
+
       - name: Import the built entry points by package name
         run: |
           node --input-type=module <<'EOF'

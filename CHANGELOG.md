@@ -9,6 +9,22 @@ format, output framing, and exit codes; the `overleaf-web-mcp/core` surface the
 is announced at least one minor version ahead with both names working, and every change is listed
 below. Before 1.0.0, a minor or patch release could change them, and each such change is listed.
 
+## [1.3.0] - Unreleased
+
+### Added
+
+- A personal Cloudflare read-only connection probe under `cloudflare/`, with Cloudflare Access
+  assertion verification, encrypted session storage in a SQLite Durable Object, and an authenticated
+  setup page. It reads only the selected test project's root document and reports success flags,
+  a character count, and a protocol name. Remote MCP editing is not enabled by this probe.
+
+### Internal
+
+- Import Node's `Buffer` explicitly in the Socket.IO adapter so its type guard remains correct
+  when the shared protocol engine is compiled alongside Cloudflare runtime types.
+- Check the Cloudflare bundle in CI with local workerd, synthetic Access assertions, and SQLite
+  Durable Object storage. The check needs no cloud credentials or live Overleaf project.
+
 ## [1.2.0] - 2026-11-14
 
 Cheaper for agents. An agent can now find text without reading every document (`search_project`),
