@@ -9,3 +9,9 @@ coverage/
 .DS_Store
 site/
 __pycache__/
+
+# Cloudflare local state and generated bundles
+.wrangler/
+cloudflare/dist/
+.dev.vars*
+cloudflare/.local/

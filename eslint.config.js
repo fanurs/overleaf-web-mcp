@@ -5,7 +5,7 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {
-    ignores: ['dist/**', 'coverage/**', 'site/**', 'eslint.config.js'],
+    ignores: ['dist/**', 'cloudflare/dist/**', 'coverage/**', 'site/**', 'eslint.config.js'],
   },
   {
     files: ['**/*.ts'],
@@ -65,7 +65,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['test/**/*.ts'],
+    files: ['test/**/*.ts', 'cloudflare/test/**/*.ts'],
     rules: {
       '@typescript-eslint/require-await': 'off',
       '@typescript-eslint/no-unsafe-assignment': 'off',
@@ -74,6 +74,13 @@ export default tseslint.config(
       '@typescript-eslint/prefer-promise-reject-errors': 'off',
       '@typescript-eslint/only-throw-error': 'off',
       '@typescript-eslint/no-base-to-string': 'off',
+    },
+  },
+  {
+    ...tseslint.configs.disableTypeChecked,
+    files: ['cloudflare/scripts/**/*.mjs'],
+    languageOptions: {
+      globals: { Response: 'readonly', URL: 'readonly', console: 'readonly' },
     },
   }
 )
