@@ -18,6 +18,11 @@ below. Before 1.0.0, a minor or patch release could change them, and each such c
   setup page. It reads only the selected test project's root document and reports success flags,
   a character count, and a protocol name. Remote MCP editing is not enabled by this probe.
 
+### Documentation
+
+- Explain how to select the Cloudflare deployment branch when the creation form starts from
+  `main`, and document the permissions and separate name of the deployment token.
+
 ### Internal
 
 - Import Node's `Buffer` explicitly in the Socket.IO adapter so its type guard remains correct

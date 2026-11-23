@@ -54,9 +54,20 @@ Use these settings after the code is pushed:
 | Deploy command | `npm run deploy:cloudflare` |
 | Build variable | `NODE_VERSION=24` |
 | Preview builds | Disabled |
-| API token | Let Cloudflare create its build token |
+| API token | Create a separate build token named `overleaf-mcp-deploy` |
 
-Save and deploy. The configuration provisions the SQLite Durable Object and custom domain.
+Cloudflare's automatic token can edit Workers, KV/R2 storage, and Worker routes across the
+account. Review that permission before creating it. The token is stored by Cloudflare; do not
+reuse another application's token just because the form selects it by default.
+
+If the creation form offers **Production branch**, select the branch above before deploying.
+The current dashboard may instead start the first build from the repository's default branch.
+In that case, cancel that initial build, then open **Settings > Builds**, set **Production
+branch** to `release/1.3.0-cloudflare`, and save. A new commit pushed to that branch starts the
+correct build. **Retry build** on the canceled `main` build repeats `main`, even after changing
+the production branch, so do not use that retry to switch branches.
+
+The successful branch build provisions the SQLite Durable Object and custom domain.
 The Worker initially returns `SETUP_REQUIRED` until its runtime settings are filled in.
 There is no need to copy Cloudflare's build token into chat or into GitHub secrets.
 
