@@ -22,6 +22,8 @@ below. Before 1.0.0, a minor or patch release could change them, and each such c
 
 - Explain how to select the Cloudflare deployment branch when the creation form starts from
   `main`, and document the permissions and separate name of the deployment token.
+- Record the Free-only billing requirement, quota failure behavior, separate Overleaf Access
+  policy, and the GitHub app permission needed for automatic deployment of a public fork.
 
 ### Internal
 

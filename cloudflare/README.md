@@ -20,6 +20,29 @@ The setup reuses the account and Google identity provider already used by PDF Re
 Keep Workers and Zero Trust on their existing Free plans. The deploy uses a SQLite Durable
 Object, with no Containers, Browser Run, R2 bucket, or paid service.
 
+### Free-only billing requirement
+
+Workers Free and Zero Trust Free are required, not merely preferred. Verify the account's
+current plans before the first deployment and whenever account billing changes. This account
+was checked on 2026-11-23: Workers Free ($0) and Zero Trust Free ($0/month).
+
+On Workers Free, excess Worker requests and Durable Object operations fail at their free
+limits; they do not switch to paid overages. Build minutes also have a fixed Free allowance.
+These account-level limits are shared with the account's other projects. Reaching them may
+make the service unavailable until the limits reset. This is the intended behavior.
+
+Do not upgrade the account to fix a failed build, CPU limit, or quota error. Do not enable
+paid services or add usage-billed dependencies. The code only deploys a Worker and a SQLite
+Durable Object. It has no billing-subscription setup step. A later account-wide upgrade would
+change the billing behavior for this project too; the application cannot prevent an account
+administrator from changing the subscription. Paid-plan spending alerts or caps are not a
+replacement for staying on Free.
+
+Cloudflare's enforcement is documented at
+<https://developers.cloudflare.com/workers/platform/limits/#daily-requests>,
+<https://developers.cloudflare.com/durable-objects/platform/pricing/>, and
+<https://developers.cloudflare.com/workers/ci-cd/builds/limits-and-pricing/>.
+
 ### 1. Set up Access
 
 Open <https://one.dash.cloudflare.com/> and select your existing account.
@@ -29,7 +52,8 @@ then **Add public hostname**. Some dashboard versions label these **Add an appli
 
 - Name the application `Overleaf MCP - private access`.
 - Use hostname `overleaf-mcp.fanurs.com`, covering every path.
-- Add an **Allow** policy containing your exact email address.
+- Create a separate **Allow** policy named `Overleaf MCP - owner only`, containing your exact
+  email address. Do not share a policy with an unrelated project.
 - Reuse the existing Google identity provider used by PDF Reader.
 - Save, then copy the new application's **Application Audience (AUD) Tag**.
 
@@ -42,6 +66,11 @@ Open <https://dash.cloudflare.com/> and select the account containing `fanurs.co
 Go to **Workers & Pages > Create application > GitHub** and choose
 `fanurs/overleaf-web-mcp`. If the repository is missing, grant the Cloudflare GitHub app access
 to that fork and return to the list.
+
+A public fork can appear in the list even without the app permission needed for automatic
+deployments. If the Worker says the Git account is disconnected, use **Settings > Builds >
+Manage** and add only this fork to the existing Cloudflare GitHub app's selected repositories.
+Review its repository permissions before saving. Existing repository selections stay unchanged.
 
 Use these settings after the code is pushed:
 
