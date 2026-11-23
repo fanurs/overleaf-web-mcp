@@ -5,6 +5,7 @@ import { FifoQueue } from '../../src/core/queue.js'
 import { importSession } from './cookies.js'
 import { decryptSession, encryptSession, type EncryptedSession } from './crypto.js'
 import { boundedJson, json } from './http.js'
+import { HostedLogin, type HostedLoginOptions } from './hosted-login.js'
 import { runProbe } from './probe.js'
 
 interface SessionData {
@@ -26,18 +27,35 @@ const SAFE_CODES = new Set([
   'PROJECT_ID_INVALID',
   'ROOT_DOCUMENT_MISSING',
   'SESSION_KEY_INVALID',
+  'LOGIN_REQUIRED',
+  'LOGIN_NOT_FINISHED',
+  'LOGIN_DAILY_LIMIT',
+  'LOGIN_PROJECT_CHANGED',
+  'LOGIN_CLOSE_PENDING',
+  'LOGIN_BROWSER_CLOSED',
+  'LOGIN_VIEW_INVALID',
 ])
 
 /** Serialized access avoids a refresh overwriting a new login or undoing an unlink. */
 export class SessionController {
   readonly #queue = new FifoQueue()
+  readonly #login: HostedLogin | undefined
 
   constructor(
     private readonly storage: SessionStorage,
     private readonly secret: string,
     private readonly owner: string,
-    private readonly probe = runProbe
-  ) {}
+    private readonly probe = runProbe,
+    hostedLogin?: HostedLoginOptions
+  ) {
+    this.#login = hostedLogin ? new HostedLogin(storage, secret, owner, hostedLogin) : undefined
+  }
+
+  async alarm(): Promise<void> {
+    await this.#queue.run(async () => {
+      await this.#login?.expire()
+    })
+  }
 
   async #save(data: SessionData): Promise<void> {
     await this.storage.put('session', await encryptSession(JSON.stringify(data), this.secret, this.owner))
@@ -46,13 +64,44 @@ export class SessionController {
   async handle(request: Request): Promise<Response> {
     return await this.#queue.run(async () => {
       try {
+        await this.#login?.expire()
         const path = new URL(request.url).pathname
         if (request.method === 'GET' && path === '/api/status') {
-          return json({ linked: (await this.storage.get('session')) !== undefined, mode: 'read-only-probe' })
+          return json({
+            linked: (await this.storage.get('session')) !== undefined,
+            mode: 'read-only-probe',
+            hostedLogin: !!this.#login,
+            login: await this.#login?.status(),
+          })
         }
         if (request.method !== 'POST') return json({ code: 'NOT_FOUND' }, 404)
+        if (path.startsWith('/api/login/')) {
+          if (!this.#login) return json({ code: 'HOSTED_LOGIN_UNAVAILABLE' }, 503)
+          if (path === '/api/login/start') {
+            const input = await boundedJson(request)
+            if (
+              typeof input !== 'object' ||
+              input === null ||
+              !('projectId' in input) ||
+              typeof input.projectId !== 'string'
+            )
+              return json({ code: 'INVALID_INPUT' }, 400)
+            return json(await this.#login.start(input.projectId))
+          }
+          if (path === '/api/login/cancel') {
+            await this.#login.cancel()
+            return json({ loginClosed: true })
+          }
+          if (path === '/api/login/finish') {
+            const { jar, projectId } = await this.#login.finish()
+            await this.#save({ jar: JSON.stringify(await jar.serialize()), projectId })
+            await this.#login.cancel()
+            return json({ linked: true, verified: false, loginClosed: true })
+          }
+        }
         if (path === '/api/unlink') {
           await this.storage.delete('session')
+          await this.#login?.cancel()
           return json({ linked: false })
         }
         if (path === '/api/link') {
@@ -63,6 +112,7 @@ export class SessionController {
             return json({ code: 'INVALID_INPUT' }, 400)
           }
           const jar = await importSession(cookies)
+          await this.#login?.cancel()
           await this.#save({ jar: JSON.stringify(await jar.serialize()), projectId })
           return json({ linked: true, verified: false })
         }
@@ -87,7 +137,9 @@ export class SessionController {
             ? error.code
             : error instanceof Error && SAFE_CODES.has(error.message)
               ? error.message
-              : 'PROBE_FAILED'
+              : new URL(request.url).pathname.startsWith('/api/login/')
+                ? 'LOGIN_FAILED'
+                : 'PROBE_FAILED'
         return json({ code, changedDocuments: false }, 400)
       }
     })

@@ -6,7 +6,8 @@ project's root document from Cloudflare. It does not yet offer an MCP endpoint o
 The live Overleaf connection must pass before the editing adapter is built out.
 
 The implementation uses a Worker and a SQLite Durable Object, both available on Workers Free.
-There is no container, hosted browser, model API, or local server that must stay running.
+There is no container, model API, or local server that must stay running. A temporary hosted
+browser is used only for sign-in, then closed; normal document access uses the saved session.
 Overleaf's existing protocol engine is reused. The socket closes after each test.
 
 ## Deploy this checkpoint
@@ -18,7 +19,7 @@ API key, or session file needs to be sent to the assistant or put in GitHub.
 
 The setup reuses the account and Google identity provider already used by PDF Reader.
 Keep Workers and Zero Trust on their existing Free plans. The deploy uses a SQLite Durable
-Object, with no Containers, Browser Run, R2 bucket, or paid service.
+Object and a Browser Run binding on Workers Free, with no Containers, R2 bucket, or paid plan.
 
 ### Free-only billing requirement
 
@@ -32,8 +33,8 @@ These account-level limits are shared with the account's other projects. Reachin
 make the service unavailable until the limits reset. This is the intended behavior.
 
 Do not upgrade the account to fix a failed build, CPU limit, or quota error. Do not enable
-paid services or add usage-billed dependencies. The code only deploys a Worker and a SQLite
-Durable Object. It has no billing-subscription setup step. A later account-wide upgrade would
+paid services or add usage-billed dependencies. The code deploys a Worker, a SQLite
+Durable Object, and a Browser Run binding on the Free plan. It has no billing-subscription setup step. A later account-wide upgrade would
 change the billing behavior for this project too; the application cannot prevent an account
 administrator from changing the subscription. Paid-plan spending alerts or caps are not a
 replacement for staying on Free.
@@ -53,7 +54,8 @@ then **Add public hostname**. Some dashboard versions label these **Add an appli
 - Name the application `Overleaf MCP - private access`.
 - Use hostname `overleaf-mcp.fanurs.com`, covering every path.
 - Create a separate **Allow** policy named `Overleaf MCP - owner only`, containing your exact
-  email address. Do not share a policy with an unrelated project.
+  email addresses. The current policy allows `fanurs.tce@gmail.com` and `cteh@andrew.cmu.edu`.
+  Do not share a policy with an unrelated project.
 - Reuse the existing Google identity provider used by PDF Reader.
 - Save, then copy the new application's **Application Audience (AUD) Tag**.
 
@@ -121,36 +123,64 @@ Save/deploy the runtime settings. Open <https://overleaf-mcp.fanurs.com/connect>
 This address will work only after deployment and domain setup. `workers.dev` and preview URLs
 are disabled so there is no alternate unprotected address.
 
-### 4. Link Overleaf and run the read-only test
+### 4. Sign into Overleaf in your browser
 
-Open <https://www.overleaf.com/project>, choose **New Project > Blank Project**, and name it
-`MCP connection test`. Keep the starter document and use this disposable project's URL below.
+Open <https://overleaf-mcp.fanurs.com/connect> and sign into the private setup page with an
+allowed account. This only protects our service; it does not sign the service into Overleaf.
+Use the same setup-page identity each time, because each identity has separate session storage.
 
-Install Node.js from <https://nodejs.org/en/download> if necessary. A Chrome-family browser is
-also needed for the temporary login helper. In a terminal on your own computer, run:
+1. Paste the selected Overleaf project's URL. The probe reads its root document without edits.
+2. Click **Sign in to Overleaf**, then **Open Overleaf sign-in window** within one minute.
+3. In Cloudflare's Live View, sign into Overleaf normally, including institutional or Google
+   login if needed. Credentials are entered on those sites inside a temporary cloud browser.
+4. Return to the setup page and click **I've signed in - finish connecting**. The service saves
+   only Overleaf cookies, encrypted, and closes the entire temporary browser.
+5. Click **Test connection**. Success returns `authenticated`, `projectJoined`, and
+   `documentRead` as true, a character count, and a protocol name. No document text is returned.
 
-```bash
-npx --yes overleaf-web-mcp@1.2.0 login
-```
+No local program, extension, terminal command, or uploaded session file is required by this
+flow. The optional advanced upload fallback remains for users who already have an exported
+session. A session is an account login, not an Overleaf-issued project-scoped permission;
+this probe restricts its read to the selected project. A future MCP adapter must enforce its
+project allowlist separately. If the saved session expires, repeat this browser sign-in flow.
+**Remove saved session** deletes the active stored credentials and cancels any pending login.
+Revoking the login at Overleaf is a separate action.
 
-A separate browser window opens. Complete the normal Overleaf sign-in yourself. It closes
-after the session is saved. The command's JSON result reports the cookie file path.
+#### Free limits and cleanup
 
-On the protected setup page:
+Browser Run is used only during interactive sign-in. It is not used for each document read.
+Workers Free permits ten browser minutes per day across the account and rejects further
+attempts with HTTP 429. This service also limits each verified identity to two launches per
+UTC day, including failed launches. A login has a four-minute absolute deadline enforced by a
+Durable Object alarm, plus a one-minute provider inactivity timeout. Refreshing a Live View
+link does not extend the deadline or launch another browser. Cancellation, completion, and
+expiry close the browser. Cleanup failures keep the encrypted browser ID for an alarm retry.
+Cloudflare Free is the billing guard; these application limits are additional usage controls.
 
-1. Select that saved session file. On macOS, **Command+Shift+G** in the file chooser accepts a
-   pasted file path; on Windows, paste the path into the file name box.
-2. Paste the blank test project's URL.
-3. Click **Save session**, then **Test connection**.
+The Live View URL temporarily grants control of the login browser. Deliver it only through the
+owner-authenticated setup response and never log it, commit it, or paste it into chat. URLs are
+restricted to HTTPS `live.browser.run/ui/`, expire for new connections after one minute, and
+become unusable when the browser closes. Session recording is not requested. The service
+never stores identity-provider cookies, passwords, page HTML, or screenshots.
 
-The expected result contains `authenticated: true`, `projectJoined: true`, and
-`documentRead: true`, plus a character count and protocol name. Copy that small result back
-to the assistant. Failure results contain a code and no document text or session credentials.
+#### Verified checkpoint and remaining uncertainty
 
-The file gives access to your Overleaf session. Transfer it only to your protected service.
-It is encrypted in Durable Object storage and excluded from diagnostics. The **Remove saved
-session** button deletes the active stored session. Signing out/revoking the Overleaf session
-is a separate action in Overleaf. No helper needs to stay running after linking.
+On November 23, 2026, a short dashboard-created Browser Run session reached the normal
+Overleaf login page with recording off. The session was explicitly closed and the dashboard
+confirmed no active sessions. That proves the login page is reachable, not that a particular
+university/Google login or the later authenticated protocol probe succeeds. Those still need
+the owner to sign in. Do not bypass a provider security refusal or solve it by upgrading plans.
+
+The `BROWSER` binding is deployed from `wrangler.jsonc`; it requires no separately stored
+Cloudflare API token. The code uses the official `@cloudflare/puppeteer` package, pinned to
+2.0.1. No new Overleaf API routes are introduced: the flow navigates the ordinary login page
+and uses the existing upstream authenticated-project-page signal.
+
+References for this flow:
+<https://developers.cloudflare.com/browser-run/features/live-view/>,
+<https://developers.cloudflare.com/browser-run/features/human-in-the-loop/>,
+<https://developers.cloudflare.com/browser-run/puppeteer/>, and
+<https://developers.cloudflare.com/browser-run/limits/>.
 
 ## Later ChatGPT connection
 

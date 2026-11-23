@@ -13,6 +13,11 @@ below. Before 1.0.0, a minor or patch release could change them, and each such c
 
 ### Added
 
+- Browser-only Overleaf sign-in through a temporary Cloudflare Browser Run Live View, with
+  encrypted owner-isolated session capture, cancellation, automatic cleanup, and daily attempt
+  limits. The connection page no longer requires a local command or session-file upload.
+  This remains a read-only connection test; a successful university login is not assumed.
+
 - A personal Cloudflare read-only connection probe under `cloudflare/`, with Cloudflare Access
   assertion verification, encrypted session storage in a SQLite Durable Object, and an authenticated
   setup page. It reads only the selected test project's root document and reports success flags,

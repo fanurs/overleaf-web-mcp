@@ -5,8 +5,13 @@ The owner requires zero Cloudflare usage charges for this integration.
 - Keep the account on Workers Free and Zero Trust Free. Confirm the current plans before
   first deployment and whenever billing changes. Both were verified as Free on 2026-11-23.
 - Never upgrade a plan or enable a paid service to resolve a build or runtime failure.
-- Use only the existing Worker and SQLite-backed Durable Object. Do not introduce Containers,
-  Browser Run, R2, AI services, external paid services, or usage-billed dependencies.
+- Use the existing Worker and SQLite-backed Durable Object. Browser Run on Workers Free is
+  allowed only for the owner-authorized browser-only Overleaf login flow. Use a dedicated
+  temporary browser, a four-minute absolute deadline, one-minute idle timeout, and explicit
+  closure after completion or cancellation. Never enable session recordings.
+- Keep at most two hosted login attempts per verified identity per UTC day. Cloudflare
+  separately enforces its shared ten-minute daily Free browser allowance. Do not retry quota
+  failures automatically. Do not introduce Containers, R2, AI services, paid plans, or paid fallbacks.
 - Free-tier quota exhaustion must stop work with an error. Do not bypass the limit using a
   paid fallback. Account limits are shared with the owner's other projects.
 - Explain that an account administrator's later upgrade changes the billing terms. Do not

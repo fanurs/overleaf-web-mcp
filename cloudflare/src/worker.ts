@@ -2,12 +2,14 @@ import { DurableObject } from 'cloudflare:workers'
 
 import { verifyAccess, type AccessConfig } from './auth.js'
 import { json, validSetupRequest } from './http.js'
+import { CloudflareHostedBrowser } from './hosted-browser.js'
 import { SETUP_HTML, SETUP_JS } from './page.js'
 import { SessionController } from './session.js'
 
 interface Env extends AccessConfig {
   SESSION_ENCRYPTION_KEY: string
   SESSIONS: DurableObjectNamespace<OverleafSession>
+  BROWSER?: Fetcher
 }
 
 export class OverleafSession extends DurableObject<Env> {
@@ -15,11 +17,23 @@ export class OverleafSession extends DurableObject<Env> {
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
-    this.#controller = new SessionController(ctx.storage, env.SESSION_ENCRYPTION_KEY, ctx.id.toString())
+    this.#controller = new SessionController(
+      ctx.storage,
+      env.SESSION_ENCRYPTION_KEY,
+      ctx.id.toString(),
+      undefined,
+      env.BROWSER
+        ? { browser: new CloudflareHostedBrowser(env.BROWSER), setAlarm: time => ctx.storage.setAlarm(time) }
+        : undefined
+    )
   }
 
   async fetch(request: Request): Promise<Response> {
     return await this.#controller.handle(request)
+  }
+
+  async alarm(): Promise<void> {
+    await this.#controller.alarm()
   }
 }
 
