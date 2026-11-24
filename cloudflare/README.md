@@ -1,8 +1,9 @@
 # Cloudflare connection test
 
 This is a prepared, read-only deployment for the personal ChatGPT Overleaf integration.
-It verifies authenticated HTTP, the legacy Socket.IO connection, and reading a disposable
-project's root document from Cloudflare. It does not yet offer an MCP endpoint or document editing.
+It verifies authenticated HTTP, the legacy Socket.IO connection, and reading one existing
+text document from the selected project. It uses the configured main document when available,
+otherwise an existing TeX document or another text document. It never changes the compile root. It does not yet offer an MCP endpoint or document editing.
 The live Overleaf connection must pass before the editing adapter is built out.
 
 The implementation uses a Worker and a SQLite Durable Object, both available on Workers Free.

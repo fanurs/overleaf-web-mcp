@@ -14,9 +14,10 @@ export interface ProbeResult {
   documentRead: true
   characters: number
   protocol: string
+  documentSelection?: 'configured_root' | 'project_document'
 }
 
-/** Reads the disposable project's root document through the upstream protocol engine. Never writes. */
+/** Reads one document through the upstream protocol engine. Never writes or changes the compile root. */
 export async function runProbe(jar: CookieJar, projectId: string): Promise<ProbeResult> {
   if (!/^[a-f0-9]{24}$/u.test(projectId)) throw new Error('PROJECT_ID_INVALID')
   const fetcher = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
@@ -66,15 +67,21 @@ export async function runProbe(jar: CookieJar, projectId: string): Promise<Probe
     webSocketFactory: (url, options) => new WorkerWebSocket(url, options.headers),
   })
   try {
-    const documentId = connection.rootDocId
-    if (!documentId) throw new Error('ROOT_DOCUMENT_MISSING')
-    return await connection.withDocument(documentId, document =>
+    // A readable project need not report an explicit compile root. Select only an actual
+    // editable document in its joined tree, never a binary file, folder, or invented ID.
+    const documents = connection.getTree().filter(entity => entity.type === 'doc')
+    documents.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+    const root = documents.find(entity => entity.id === connection.rootDocId)
+    const selected = root ?? documents.find(entity => /\.tex$/iu.test(entity.path)) ?? documents[0]
+    if (!selected) throw new Error('NO_READABLE_DOCUMENT')
+    return await connection.withDocument(selected.id, document =>
       Promise.resolve({
         authenticated: true,
         projectJoined: true,
         documentRead: true,
         characters: document.content.length,
         protocol: document.protocol,
+        documentSelection: root ? 'configured_root' : 'project_document',
       })
     )
   } finally {

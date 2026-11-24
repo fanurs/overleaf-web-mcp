@@ -37,10 +37,15 @@ below. Before 1.0.0, a minor or patch release could change them, and each such c
 
 - A personal Cloudflare read-only connection probe under `cloudflare/`, with Cloudflare Access
   assertion verification, encrypted session storage in a SQLite Durable Object, and an authenticated
-  setup page. It reads only the selected test project's root document and reports success flags,
-  a character count, and a protocol name. Remote MCP editing is not enabled by this probe.
+  setup page. It reads one existing text document from the selected project and reports success
+  flags, a character count, a protocol name, and whether the configured main document was used. Remote MCP editing is not enabled by this probe.
 
 ### Fixed
+
+- The Cloudflare connection test can read a project when Overleaf does not report a usable
+  configured main document. It chooses an existing editable document from the joined project
+  tree, preferring TeX, without changing settings or document content. The result identifies
+  the selection method; a tree without editable documents returns `NO_READABLE_DOCUMENT`.
 
 - Browser helper 0.1.1 includes the exact root `overleaf.com` host permission needed by
   Chromium's domain-cookie permission filter. It chooses the cookie store of the selected

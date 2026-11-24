@@ -56,7 +56,8 @@ const messages={
  SESSION_REQUIRED:'Connect your Overleaf account before testing.',
  LOGIN_FAILED:'Cloud sign-in could not complete. Check the time log below. No new browser was automatically launched.',
  AUTH_EXPIRED:'Overleaf no longer accepts the saved session. Sign into Overleaf again.',
- PROBE_FAILED:'The connection test failed. Share this error code with the assistant; do not share session files.'
+ PROBE_FAILED:'The connection test failed. Share this error code with the assistant; do not share session files.',
+ NO_READABLE_DOCUMENT:'The service signed in and joined your project, but its file tree contained no readable text document. Your saved session is still connected. Code NO_READABLE_DOCUMENT.'
 };
 const outcomes={connected:'Connected',cancelled:'Cancelled',expired:'Time limit reached',not_opened:'Login window not opened',failed:'Failed',launch_failed:'Launch failed'};
 function duration(ms){return (Math.max(0,ms)/1000).toFixed(1)+' s'}
@@ -117,7 +118,7 @@ document.querySelector('#link').onclick=()=>act(async()=>{
  const id=projectId();if(!id)return;
  if(await call('/api/link',{cookies:await file.text(),projectId:id})){document.querySelector('#session').value='';clearLogin();result.textContent='Session saved. Click Test connection next.'}
 });
-document.querySelector('#probe').onclick=()=>act(async()=>{const value=await call('/api/probe',{});if(value)result.textContent=JSON.stringify(value,null,2)});
+document.querySelector('#probe').onclick=()=>act(async()=>{const value=await call('/api/probe',{});if(value)result.textContent='Connection verified. The service signed into Overleaf, joined your project, and read a text document without editing it.'+(value.documentSelection==='project_document'?' Overleaf did not report a usable configured main document, so the test read another existing text document.':'')+'\\n\\n'+JSON.stringify(value,null,2)});
 document.querySelector('#unlink').onclick=()=>act(async()=>{if(await call('/api/unlink',{})){clearLogin();result.textContent='Saved Overleaf session removed.'}});
 act(()=>refresh(true));
 `

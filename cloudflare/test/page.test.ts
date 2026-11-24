@@ -22,7 +22,7 @@ class Element {
     if (name === 'href') this.href = ''
   }
 }
-function page(initial: object) {
+function page(initial: object, probeResult?: object) {
   const nodes = new Map<string, Element>()
   const node = (id: string) => {
     if (!nodes.has(id)) nodes.set(id, new Element())
@@ -34,6 +34,7 @@ function page(initial: object) {
   const clocks: Array<() => void> = []
   const fetch = vi.fn(async (path: string, options: { body?: string }) => {
     if (path === '/api/status') return Response.json(status)
+    if (path === '/api/probe') return Response.json(probeResult)
     if (path === '/api/login/start') {
       expect(JSON.parse(options.body!)).toEqual({ projectId: 'a'.repeat(24) })
       status = { linked: false, usage: [], login: { elapsedMs: 2500, expiresAt: Date.now() + 237500, watching: false } }
@@ -128,6 +129,26 @@ describe('browser-only setup page', () => {
     })
     await vi.waitFor(() => expect(test.node('#result').textContent).toContain('Overleaf session saved'))
     expect(test.node('#usage-summary').textContent).toContain('240.0 s estimated')
+  })
+
+  it('explains a successful read that used an existing document without changing project settings', async () => {
+    const test = page(
+      { linked: true, usage: [] },
+      {
+        authenticated: true,
+        projectJoined: true,
+        documentRead: true,
+        characters: 19,
+        protocol: 'sharejs',
+        documentSelection: 'project_document',
+      }
+    )
+    await vi.waitFor(() => expect(test.node('#result').textContent).toContain('Overleaf session saved'))
+    await test.node('#probe').onclick!()
+    expect(test.node('#result').textContent).toContain('Connection verified')
+    expect(test.node('#result').textContent).toContain('read another existing text document')
+    expect(test.fetch.mock.calls.map(call => call[0]).filter(path => path !== '/api/status')).toEqual(['/api/probe'])
+    expect(test.clocks).toHaveLength(0)
   })
 
   it('labels missing launch measurements as unknown, not zero browser time', async () => {
