@@ -85,6 +85,8 @@ describe('browser-only setup page', () => {
     await test.node('#start').onclick!()
     expect(test.node('#elapsed').textContent).toContain('2.5 s')
     expect(test.node('#login-view').href).toContain('private-fixture')
+    await test.timers.at(-1)!()
+    expect(test.node('#result').textContent).toBe('Click Open Overleaf sign-in window now.')
     expect(test.fetch.mock.calls.some(call => call[0] === '/api/login/watch')).toBe(false)
     await test.node('#login-view').onclick!()
     expect(test.fetch.mock.calls.some(call => call[0] === '/api/login/watch')).toBe(true)
