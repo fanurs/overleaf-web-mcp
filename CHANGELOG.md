@@ -13,11 +13,22 @@ below. Before 1.0.0, a minor or patch release could change them, and each such c
 
 ### Added
 
+- An optional Chrome/Edge helper under `cloudflare/extension/` transfers an existing Overleaf
+  session directly to the authenticated private setup service on an explicit click. No cloud
+  browser is started, no cookies are displayed or saved locally, and no background transfer
+  runs. The reproducible ZIP is available from the private setup page. A real read test is
+  still required; this does not enable the editing MCP.
+- Hosted sign-in now has an untimed preparation page and requires a visible, focused,
+  explicit Start click. The same tab becomes the login window. Startup cancels if the owner
+  switches away before handoff. The server shutdown deadline is sixty seconds including
+  startup, with actual or estimated duration logged if provider delays postpone closure.
+  Requests from the old setup page are refused. Assistants must not start the timed step.
+
 - Cloudflare sign-in automatically saves the session and closes the browser after detecting
-  login, with manual completion retained. Unopened attempts close after one minute. The setup
+  login, with manual completion retained. Incomplete handoffs close after twenty seconds. The setup
   page shows elapsed time and a private per-attempt duration/outcome log with complete JSON
   export, distinguishing Cloudflare-reported browser time from estimates or unavailable data.
-  Shutdown retries persist across restarts and run even before the four-minute deadline.
+  Shutdown retries persist across restarts and run even before the sixty-second deadline.
 
 - Browser-only Overleaf sign-in through a temporary Cloudflare Browser Run Live View, with
   encrypted owner-isolated session capture, cancellation, automatic cleanup, and daily attempt

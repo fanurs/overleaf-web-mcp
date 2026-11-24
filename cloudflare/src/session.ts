@@ -91,6 +91,8 @@ export class SessionController {
             if (
               typeof input !== 'object' ||
               input === null ||
+              !('ready' in input) ||
+              input.ready !== true ||
               !('projectId' in input) ||
               typeof input.projectId !== 'string'
             )

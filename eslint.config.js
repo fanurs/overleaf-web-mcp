@@ -78,6 +78,20 @@ export default tseslint.config(
   },
   {
     ...tseslint.configs.disableTypeChecked,
+    files: ['cloudflare/extension/**/*.js'],
+    languageOptions: {
+      globals: {
+        chrome: 'readonly',
+        document: 'readonly',
+        location: 'readonly',
+        fetch: 'readonly',
+        URL: 'readonly',
+        TextEncoder: 'readonly',
+      },
+    },
+  },
+  {
+    ...tseslint.configs.disableTypeChecked,
     files: ['cloudflare/scripts/**/*.mjs'],
     languageOptions: {
       globals: { Response: 'readonly', URL: 'readonly', console: 'readonly' },

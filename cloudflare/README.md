@@ -6,8 +6,9 @@ project's root document from Cloudflare. It does not yet offer an MCP endpoint o
 The live Overleaf connection must pass before the editing adapter is built out.
 
 The implementation uses a Worker and a SQLite Durable Object, both available on Workers Free.
-There is no container, model API, or local server that must stay running. A temporary hosted
-browser is used only for sign-in, then closed; normal document access uses the saved session.
+There is no container, model API, or local server that must stay running. An optional browser helper transfers the existing Overleaf session without cloud-browser time.
+Alternatively, a temporary hosted browser is used only for sign-in, then closed; normal document
+access uses the saved session.
 Overleaf's existing protocol engine is reused. The socket closes after each test.
 
 ## Deploy this checkpoint
@@ -123,53 +124,84 @@ Save/deploy the runtime settings. Open <https://overleaf-mcp.fanurs.com/connect>
 This address will work only after deployment and domain setup. `workers.dev` and preview URLs
 are disabled so there is no alternate unprotected address.
 
-### 4. Sign into Overleaf in your browser
+### 4. Connect an existing login without a timer
 
-Open <https://overleaf-mcp.fanurs.com/connect> and sign into the private setup page with an
-allowed account. This only protects our service; it does not sign the service into Overleaf.
+Open https://overleaf-mcp.fanurs.com/connect and sign into the private setup page with an
+allowed account. This protects our service; it does not sign the service into Overleaf.
 Use the same setup-page identity each time, because each identity has separate session storage.
 
-1. Paste the selected Overleaf project's URL. The probe reads its root document without edits.
-2. Click **Sign in to Overleaf**, then **Open Overleaf sign-in window** within one minute.
-3. In Cloudflare's Live View, sign into Overleaf normally, including institutional or Google
-   login if needed. Credentials are entered on those sites inside a temporary cloud browser.
-4. After the Overleaf projects page appears, the service detects login, saves only Overleaf
-   cookies encrypted, and closes the entire cloud browser automatically. A **Finish connecting**
-   button remains available to trigger this immediately yourself. Return to the setup page
-   to see the saved-session status and browser time.
-5. Click **Test connection**. Success returns `authenticated`, `projectJoined`, and
-   `documentRead` as true, a character count, and a protocol name. No document text is returned.
+1. Download the browser helper ZIP from the setup page and extract it. In Edge open
+   `edge://extensions`, or in Chrome `chrome://extensions`. Enable **Developer mode**, choose
+   **Load unpacked**, and select the extracted folder containing `manifest.json`.
+2. Keep the signed-in setup tab open. In the same browser window, open your signed-in Overleaf
+   project. Open **Overleaf connection helper - Fanurs** from the browser Extensions menu.
+3. Check the project URL, then click **Connect this Overleaf session**. Keep the popup open
+   until **Session saved** appears. Return to setup and click **Test connection**.
 
-No local program, extension, terminal command, or uploaded session file is required by this
-flow. The optional advanced upload fallback remains for users who already have an exported
-session. A session is an account login, not an Overleaf-issued project-scoped permission;
-this probe restricts its read to the selected project. A future MCP adapter must enforce its
-project allowlist separately. If the saved session expires, repeat this browser sign-in flow.
+The helper only acts on an explicit click. It reads Overleaf cookies and transfers them directly
+through the authenticated setup tab to the existing `/api/link` route. It adds no CORS exemption,
+new secret, cloud service, background process, or paid dependency. The helper has cookie/script
+permissions only for `www.overleaf.com` and `overleaf-mcp.fanurs.com`. It has no Google/university
+site permissions, background script, analytics, or local cookie storage. The ZIP is reproducibly
+built from `cloudflare/extension/` and served behind Access at `/connect/extension.zip`.
+See [extension/README.md](extension/README.md) for the complete permission boundary.
+
+No Cloudflare browser is allocated by this method, so its cloud-browser usage is zero. Saving
+cookies is not proof that Overleaf accepts them from Cloudflare; the live read test remains
+required. If Overleaf refuses the session, report the error without bypassing the refusal.
+The extension can be removed after a successful transfer and reinstalled if renewal is needed.
+The owner's computer does not need to stay on for the hosted service after transfer.
+
+A session is an account login, not an Overleaf-issued project-scoped permission. This probe
+restricts its read to the selected project; a future MCP adapter must enforce its allowlist.
 **Remove saved session** deletes the active stored credentials and cancels any pending login.
 Revoking the login at Overleaf is a separate action.
 
+#### Optional hosted sign-in
+
+This remains available under **Alternative - temporary cloud sign-in** on the setup page.
+
+1. Paste the project URL and click **Prepare cloud sign-in (no timer)**. This opens a separate
+   preparation page without allocating a browser. The owner can leave it open indefinitely.
+2. Only when ready, the owner clicks **Start 60-second sign-in** on that visible, focused page.
+   An assistant must never click this button for the owner. The same tab becomes Live View.
+   Startup is cancelled if the page loses focus or is hidden before the handoff completes.
+3. Sign into Overleaf in the temporary browser. The service detects successful login, saves
+   only Overleaf cookies encrypted, and closes the cloud browser. **Finish connecting** and
+   **Cancel sign-in** remain available on the setup page along with the time log.
+4. Return to setup and click **Test connection**. Success reports `authenticated`,
+   `projectJoined`, and `documentRead` as true, a character count, and a protocol name.
+   No document text is returned and no document is changed.
+
+The sixty-second deadline includes startup. Once Live View opens, switching away does not
+pause Cloudflare usage; the service cannot monitor attention inside that separate site.
+No automatic attempt or retry is launched. Preparation pages and refreshes do not start timers.
+The server refuses the old launch-request shape so a stale setup page cannot start the old flow.
+
 #### Free limits and cleanup
 
-Browser Run is used only during interactive sign-in. It is not used for each document read.
-Workers Free permits ten browser minutes per day across the account and rejects further
-attempts with HTTP 429. This service also limits each verified identity to two launches per
-UTC day, including failed launches. A login has a four-minute absolute deadline enforced by a
-Durable Object alarm. A link that is not opened closes after one minute without login polling.
-Opening the login link starts server-side checks every five seconds. The checks continue if the
-setup tab closes and stop once the browser closes. The one-minute provider inactivity timeout
-is retained, but active checks or Live View can keep it alive, so the four-minute server deadline
-is the authoritative cutoff. Refreshing a link never extends that deadline or launches another
-browser. Cancellation, completion, failures, and expiry close the browser. The close intent is
-persisted before shutdown; cleanup failures retry after five seconds even before the deadline.
-Automatic detection adds at most one check interval under normal provider response times;
-network failures and alarm scheduling can delay shutdown. Nothing relaunches a failed browser.
-Cloudflare Free is the billing guard; these application limits are additional usage controls.
+Browser Run is used only by the optional hosted sign-in, never the helper transfer or normal
+reads. Workers Free permits ten browser minutes per day shared across the account. This service
+also limits each verified identity to two launches per UTC day, including failed launches.
 
-The Live View URL temporarily grants control of the login browser. Deliver it only through the
-owner-authenticated setup response and never log it, commit it, or paste it into chat. URLs are
-restricted to HTTPS `live.browser.run/ui/`, expire for new connections after one minute, and
-become unusable when the browser closes. Session recording is not requested. The service
-never stores identity-provider cookies, passwords, page HTML, or screenshots.
+The Durable Object requests shutdown at 60 seconds from the launch request, including startup.
+A handoff that has not completed closes after 20 seconds without repeated login checks. Opened
+logins are checked every five seconds, closing immediately after successful detection. The
+one-minute provider inactivity timeout remains, but active checks or Live View can keep it alive;
+the server deadline is the primary control. Cleanup and close intent persist across restarts.
+Failures retry closure, never browser creation. Old four-minute pending records are tightened to
+sixty seconds while preserving their original start time for the log.
+
+Network/provider calls and alarm delivery can delay confirmed shutdown beyond the deadline.
+The UI and logs do not claim a guaranteed exactly sixty-second billing maximum. The account's
+Free plan is the billing guard; the application limits reduce usage. Do not upgrade to resolve
+quota errors. The user is never asked to watch an allocated browser while waiting for an agent.
+
+The Live View URL grants temporary control and is only delivered to the authenticated owner.
+It is never logged, committed, or pasted into chat. URLs are restricted to HTTPS
+`live.browser.run/ui/`, expire for new connections after one minute, and become unusable when
+the browser closes. Session recording is not requested. The service does not store passwords,
+identity-provider cookies, page HTML, or screenshots.
 
 #### Per-attempt time log
 
@@ -194,8 +226,7 @@ Cloudflare's ten-minute allowance remains shared across the full Cloudflare acco
 On November 23, 2026, a short dashboard-created Browser Run session reached the normal
 Overleaf login page with recording off. The session was explicitly closed and the dashboard
 confirmed no active sessions. That proves the login page is reachable, not that a particular
-university/Google login or the later authenticated protocol probe succeeds. Those still need
-the owner to sign in. Do not bypass a provider security refusal or solve it by upgrading plans.
+university/Google login or the later authenticated protocol probe succeeds. A successful owner session transfer or hosted sign-in and live read test are still required. Do not bypass a provider security refusal or solve it by upgrading plans.
 
 The `BROWSER` binding is deployed from `wrangler.jsonc`; it requires no separately stored
 Cloudflare API token. The code uses the official `@cloudflare/puppeteer` package, pinned to
@@ -219,6 +250,7 @@ The assistant will provide those exact steps when the MCP endpoint exists.
 
 ```bash
 npm ci
+npm run build:extension
 npm run check
 npm run check:cloudflare
 npm run lint

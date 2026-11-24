@@ -4,6 +4,8 @@ import { verifyAccess, type AccessConfig } from './auth.js'
 import { json, validSetupRequest } from './http.js'
 import { CloudflareHostedBrowser } from './hosted-browser.js'
 import { SETUP_HTML, SETUP_JS } from './page.js'
+import { LOGIN_HTML, LOGIN_JS } from './login-page.js'
+import { EXTENSION_ZIP } from './extension-package.js'
 import { SessionController } from './session.js'
 
 interface Env extends AccessConfig {
@@ -65,6 +67,22 @@ export default {
     }
     if (request.method === 'GET' && url.pathname === '/setup.js') {
       return new Response(SETUP_JS, { headers: { ...pageHeaders, 'Content-Type': 'text/javascript; charset=utf-8' } })
+    }
+    if (request.method === 'GET' && url.pathname === '/connect/login') {
+      return new Response(LOGIN_HTML, { headers: { ...pageHeaders, 'Content-Type': 'text/html; charset=utf-8' } })
+    }
+    if (request.method === 'GET' && url.pathname === '/login.js') {
+      return new Response(LOGIN_JS, { headers: { ...pageHeaders, 'Content-Type': 'text/javascript; charset=utf-8' } })
+    }
+    if (request.method === 'GET' && url.pathname === '/connect/extension.zip') {
+      const bytes = Uint8Array.from(atob(EXTENSION_ZIP), character => character.charCodeAt(0))
+      return new Response(bytes, {
+        headers: {
+          ...pageHeaders,
+          'Content-Type': 'application/zip',
+          'Content-Disposition': 'attachment; filename="overleaf-connection-helper.zip"',
+        },
+      })
     }
     if (url.pathname.startsWith('/api/')) {
       if (request.method !== 'GET' && !validSetupRequest(request)) return json({ code: 'ORIGIN_REFUSED' }, 403)

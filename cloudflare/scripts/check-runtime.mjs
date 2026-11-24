@@ -85,6 +85,13 @@ try {
   assert.match(page.headers.get('content-security-policy'), /frame-ancestors 'none'/u)
   assert.match(await page.text(), /Overleaf connection test/u)
   assert.match(await (await request('/setup.js', ownerA)).text(), /api\/status/u)
+  assert.match(await (await request('/connect/login', ownerA)).text(), /No timer has started/u)
+  assert.match(await (await request('/login.js', ownerA)).text(), /visibilityState/u)
+  assert.equal((await request('/connect/extension.zip')).status, 401)
+  const helper = await request('/connect/extension.zip', ownerA)
+  assert.equal(helper.headers.get('content-type'), 'application/zip')
+  assert.match(helper.headers.get('content-disposition'), /overleaf-connection-helper.zip/u)
+  assert.equal(new Uint8Array(await helper.arrayBuffer())[0], 0x50)
   assert.equal((await json('/api/status', ownerA)).linked, false)
 
   const link = {

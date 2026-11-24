@@ -46,6 +46,7 @@ function page(initial: object) {
   })
   const context = createContext({
     document: { querySelector: node, querySelectorAll: () => [], createElement: () => new Element() },
+    window: { open: vi.fn(), addEventListener: vi.fn() },
     URL,
     Date,
     performance: { now: () => now },
@@ -77,20 +78,17 @@ function page(initial: object) {
 }
 
 describe('browser-only setup page', () => {
-  it('starts no browser on load, begins automatic checks only when its login link is opened, and keeps manual completion', async () => {
+  it('opens preparation without allocating a browser or starting a timer and keeps manual completion', async () => {
     const test = page({ linked: false, usage: [] })
     await vi.waitFor(() => expect(test.node('#result').textContent).toContain('not connected'))
-    expect(test.fetch.mock.calls.map(call => call[0])).toEqual(['/api/status', '/api/status'])
     test.node('#project').value = 'https://www.overleaf.com/project/' + 'a'.repeat(24)
     await test.node('#start').onclick!()
-    expect(test.node('#elapsed').textContent).toContain('2.5 s')
-    expect(test.node('#login-view').href).toContain('private-fixture')
-    await test.timers.at(-1)!()
-    expect(test.node('#result').textContent).toBe('Click Open Overleaf sign-in window now.')
-    expect(test.fetch.mock.calls.some(call => call[0] === '/api/login/watch')).toBe(false)
-    await test.node('#login-view').onclick!()
-    expect(test.fetch.mock.calls.some(call => call[0] === '/api/login/watch')).toBe(true)
+    expect(test.fetch.mock.calls.map(call => call[0])).toEqual(['/api/status', '/api/status'])
+    expect(test.clocks).toHaveLength(0)
+    expect(test.node('#result').textContent).toContain('No cloud browser starts')
     expect(SETUP_HTML).toContain('id="finish">Finish connecting')
+    expect(SETUP_HTML).toContain('60 seconds total')
+    expect(SETUP_HTML).not.toContain('four minutes')
   })
 
   it('restores a running timer from server elapsed time and removes the credential link on automatic closure', async () => {
@@ -119,9 +117,17 @@ describe('browser-only setup page', () => {
     await vi.waitFor(() => expect(test.timers.length).toBeGreaterThan(0))
     await test.timers.at(-1)!()
     expect(test.node('#login-panel').hidden).toBe(true)
-    expect(test.node('#login-view').href).toBe('')
     expect(test.node('#usage-summary').textContent).toContain('12.0 s reported by Cloudflare')
     expect(test.node('#result').textContent).toContain('Click Test connection')
+  })
+
+  it('shows a saved helper session instead of an old expired cloud attempt', async () => {
+    const test = page({
+      linked: true,
+      usage: [{ startedAt: Date.now(), elapsedMs: 240000, timing: 'estimated', outcome: 'expired' }],
+    })
+    await vi.waitFor(() => expect(test.node('#result').textContent).toContain('Overleaf session saved'))
+    expect(test.node('#usage-summary').textContent).toContain('240.0 s estimated')
   })
 
   it('labels missing launch measurements as unknown, not zero browser time', async () => {

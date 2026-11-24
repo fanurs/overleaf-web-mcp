@@ -4,9 +4,9 @@ import { decryptSession, encryptSession } from './crypto.js'
 import { checkedLiveView, type HostedBrowser } from './hosted-browser.js'
 import type { SessionStorage } from './session.js'
 
-export const LOGIN_TIMEOUT_MS = 4 * 60 * 1000
+export const LOGIN_TIMEOUT_MS = 60 * 1000
 export const LOGIN_CHECK_MS = 5000
-export const LOGIN_OPEN_TIMEOUT_MS = 60000
+export const LOGIN_OPEN_TIMEOUT_MS = 20000
 export const DAILY_LOGIN_ATTEMPTS = 2
 
 export type LoginOutcome = 'connected' | 'cancelled' | 'expired' | 'not_opened' | 'failed' | 'launch_failed'
@@ -55,7 +55,11 @@ export class HostedLogin {
     await this.storage.put(key, await encryptSession(JSON.stringify(value), this.secret, this.owner))
   }
   #started(pending: PendingLogin): number {
-    return pending.startedAt ?? pending.expiresAt - LOGIN_TIMEOUT_MS
+    // Pending records without startedAt were created by the original four-minute flow.
+    return pending.startedAt ?? pending.expiresAt - 4 * 60 * 1000
+  }
+  #deadline(pending: PendingLogin): number {
+    return Math.min(pending.expiresAt, this.#started(pending) + LOGIN_TIMEOUT_MS)
   }
   async #record(record: LoginUsage): Promise<void> {
     const month = new Date(record.startedAt).toISOString().slice(0, 7)
@@ -79,7 +83,7 @@ export class HostedLogin {
     return pending
       ? {
           startedAt: this.#started(pending),
-          expiresAt: pending.expiresAt,
+          expiresAt: this.#deadline(pending),
           watching: !!pending.watching,
           closing: !!pending.closing,
           elapsedMs: Math.max(0, this.#now() - this.#started(pending)),
@@ -90,7 +94,7 @@ export class HostedLogin {
     const pending = await this.#read<PendingLogin>('login')
     if (!pending) return
     if (pending.closing) await this.cancel(pending.closing, pending.completion)
-    else if (pending.expiresAt <= this.#now()) await this.cancel('expired')
+    else if (this.#deadline(pending) <= this.#now()) await this.cancel('expired')
     else if (!pending.watching && this.#started(pending) + LOGIN_OPEN_TIMEOUT_MS <= this.#now()) {
       await this.cancel('not_opened')
     }
@@ -162,9 +166,13 @@ export class HostedLogin {
       }
     }
     try {
+      const loginUrl = checkedLiveView(await this.options.browser.view(pending.sessionId))
+      // Slow provider startup must not hand out an already expired login window.
+      await this.expire()
+      if (!(await this.#read<PendingLogin>('login'))) throw new Error('LOGIN_REQUIRED')
       return {
-        loginUrl: checkedLiveView(await this.options.browser.view(pending.sessionId)),
-        expiresAt: pending.expiresAt,
+        loginUrl,
+        expiresAt: this.#deadline(pending),
       }
     } catch (error) {
       await this.cancel('failed')
@@ -177,18 +185,18 @@ export class HostedLogin {
     if (!pending) throw new Error('LOGIN_REQUIRED')
     pending.watching = true
     await this.#write('login', pending)
-    await this.options.setAlarm(Math.min(this.#now() + LOGIN_CHECK_MS, pending.expiresAt))
+    await this.options.setAlarm(Math.min(this.#now() + LOGIN_CHECK_MS, this.#deadline(pending)))
   }
   async tick(save: (jar: CookieJar, projectId: string) => Promise<void>): Promise<void> {
     await this.expire()
     const pending = await this.#read<PendingLogin>('login')
     if (!pending) return
     if (!pending.watching) {
-      await this.options.setAlarm(Math.min(this.#started(pending) + LOGIN_OPEN_TIMEOUT_MS, pending.expiresAt))
+      await this.options.setAlarm(Math.min(this.#started(pending) + LOGIN_OPEN_TIMEOUT_MS, this.#deadline(pending)))
       return
     }
     // Set the next alarm first so a failed check or object restart cannot lose the deadline.
-    await this.options.setAlarm(Math.min(this.#now() + LOGIN_CHECK_MS, pending.expiresAt))
+    await this.options.setAlarm(Math.min(this.#now() + LOGIN_CHECK_MS, this.#deadline(pending)))
     try {
       const jar = await this.options.browser.readSession(pending.sessionId)
       if (!jar) return

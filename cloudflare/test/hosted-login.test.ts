@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { checkedLiveView, overleafCookies, type HostedBrowser } from '../src/hosted-browser.js'
 import { LOGIN_CHECK_MS, LOGIN_OPEN_TIMEOUT_MS, LOGIN_TIMEOUT_MS, type LoginUsage } from '../src/hosted-login.js'
-import type { EncryptedSession } from '../src/crypto.js'
+import { encryptSession, type EncryptedSession } from '../src/crypto.js'
 import { SessionController, type SessionStorage } from '../src/session.js'
 
 const projectId = '000000000000000000000001'
@@ -57,9 +57,52 @@ function setup() {
 }
 
 describe('hosted Overleaf login', () => {
+  it('refuses the old start request and keeps the new absolute limit at sixty seconds', async () => {
+    const test = setup()
+    const response = await test.create().handle(request('login/start', { projectId }))
+    expect(response.status).toBe(400)
+    expect(test.browser.launch).not.toHaveBeenCalled()
+    expect(LOGIN_TIMEOUT_MS).toBe(60000)
+  })
+
+  it('tightens a pending four-minute login from an older deployment without corrupting elapsed time', async () => {
+    const test = setup()
+    const startedAt = Date.UTC(2026, 10, 23, 12)
+    await test.storage.put(
+      'login',
+      await encryptSession(
+        JSON.stringify({
+          sessionId: 'private-fixture-browser',
+          projectId,
+          expiresAt: startedAt + 240000,
+        }),
+        secret,
+        'owner-a'
+      )
+    )
+    test.advance(60000)
+    await test.create().alarm()
+    const body = await (await test.create().handle(request('status'))).json<Status>()
+    expect(body.login).toBeUndefined()
+    expect(body.usage).toMatchObject([{ outcome: 'expired', elapsedMs: 60000 }])
+    expect(test.browser.close).toHaveBeenCalledOnce()
+  })
+
+  it('closes slow startup instead of returning an expired login link', async () => {
+    const test = setup()
+    test.browser.view.mockImplementation(async () => {
+      test.advance(61000)
+      return 'https://live.browser.run/ui/view?fixture-private-link'
+    })
+    const response = await test.create().handle(request('login/start', { projectId, ready: true }))
+    expect(await response.json()).toMatchObject({ code: 'LOGIN_REQUIRED' })
+    expect(test.browser.close).toHaveBeenCalledOnce()
+    expect(test.entries.has('login')).toBe(false)
+  })
+
   it('persists an encrypted pending login across recreation, then saves cookies and closes the browser', async () => {
     const test = setup()
-    const initial = await test.create().handle(request('login/start', { projectId }))
+    const initial = await test.create().handle(request('login/start', { projectId, ready: true }))
     const body = await initial.json<{ loginUrl: string; expiresAt: number }>()
     expect(body.loginUrl).toMatch(/^https:\/\/live.browser.run\/ui\//)
     expect(test.setAlarm).toHaveBeenCalledWith(body.expiresAt - LOGIN_TIMEOUT_MS + LOGIN_OPEN_TIMEOUT_MS)
@@ -82,7 +125,7 @@ describe('hosted Overleaf login', () => {
     const test = setup()
     vi.mocked(test.browser.readSession).mockResolvedValue(undefined)
     const controller = test.create()
-    await controller.handle(request('login/start', { projectId }))
+    await controller.handle(request('login/start', { projectId, ready: true }))
     expect(await (await controller.handle(request('login/finish', {}))).json()).toMatchObject({
       code: 'LOGIN_NOT_FINISHED',
     })
@@ -93,19 +136,24 @@ describe('hosted Overleaf login', () => {
   it('does not extend the deadline or create a second browser when refreshing its link', async () => {
     const test = setup()
     const controller = test.create()
-    const first = await (await controller.handle(request('login/start', { projectId }))).json<{ expiresAt: number }>()
+    const first = await (
+      await controller.handle(request('login/start', { projectId, ready: true }))
+    ).json<{ expiresAt: number }>()
+    await controller.handle(request('login/watch', {}))
     test.advance(20000)
-    const second = await (await controller.handle(request('login/start', { projectId }))).json<{ expiresAt: number }>()
+    const second = await (
+      await controller.handle(request('login/start', { projectId, ready: true }))
+    ).json<{ expiresAt: number }>()
     expect(first.expiresAt).toBe(second.expiresAt)
     expect(test.browser.launch).toHaveBeenCalledOnce()
-    expect(await (await controller.handle(request('login/start', { projectId: 'b'.repeat(24) }))).json()).toMatchObject(
-      { code: 'LOGIN_PROJECT_CHANGED' }
-    )
+    expect(
+      await (await controller.handle(request('login/start', { projectId: 'b'.repeat(24), ready: true }))).json()
+    ).toMatchObject({ code: 'LOGIN_PROJECT_CHANGED' })
   })
 
   it('closes at the absolute deadline even after object recreation', async () => {
     const test = setup()
-    await test.create().handle(request('login/start', { projectId }))
+    await test.create().handle(request('login/start', { projectId, ready: true }))
     test.advance(LOGIN_TIMEOUT_MS)
     await test.create().alarm()
     expect(test.browser.close).toHaveBeenCalledOnce()
@@ -118,7 +166,7 @@ describe('hosted Overleaf login', () => {
   it('retains cleanup state and reschedules after a closure failure', async () => {
     const test = setup()
     const controller = test.create()
-    await controller.handle(request('login/start', { projectId }))
+    await controller.handle(request('login/start', { projectId, ready: true }))
     vi.mocked(test.browser.close).mockRejectedValueOnce(new Error('private remote details'))
     test.advance(LOGIN_TIMEOUT_MS)
     await expect(controller.alarm()).rejects.toThrow('LOGIN_CLOSE_PENDING')
@@ -132,24 +180,26 @@ describe('hosted Overleaf login', () => {
     const test = setup()
     for (let i = 0; i < 2; i++) {
       const controller = test.create()
-      expect((await controller.handle(request('login/start', { projectId }))).status).toBe(200)
+      expect((await controller.handle(request('login/start', { projectId, ready: true }))).status).toBe(200)
       await controller.handle(request('login/cancel', {}))
     }
-    expect(await (await test.create().handle(request('login/start', { projectId }))).json()).toMatchObject({
-      code: 'LOGIN_DAILY_LIMIT',
-    })
+    expect(await (await test.create().handle(request('login/start', { projectId, ready: true }))).json()).toMatchObject(
+      {
+        code: 'LOGIN_DAILY_LIMIT',
+      }
+    )
     expect(test.browser.launch).toHaveBeenCalledTimes(2)
     test.advance(86400000)
-    expect((await test.create().handle(request('login/start', { projectId }))).status).toBe(200)
+    expect((await test.create().handle(request('login/start', { projectId, ready: true }))).status).toBe(200)
   })
 
   it('refuses invalid projects, cleans up a bad Live View URL, and never leaks provider errors', async () => {
     const test = setup()
     const controller = test.create()
-    expect((await controller.handle(request('login/start', { projectId: '../bad' }))).status).toBe(400)
+    expect((await controller.handle(request('login/start', { projectId: '../bad', ready: true }))).status).toBe(400)
     expect(test.browser.launch).not.toHaveBeenCalled()
     vi.mocked(test.browser.view).mockResolvedValue('https://attacker.example/ui/?secret')
-    const result = await (await controller.handle(request('login/start', { projectId }))).text()
+    const result = await (await controller.handle(request('login/start', { projectId, ready: true }))).text()
     expect(result).toContain('LOGIN_VIEW_INVALID')
     expect(result).not.toContain('secret')
     expect(test.browser.close).toHaveBeenCalledOnce()
@@ -159,7 +209,7 @@ describe('hosted Overleaf login', () => {
   it("cannot decrypt another identity's pending browser and cancels a browser when unlinking", async () => {
     const test = setup()
     const controller = test.create()
-    await controller.handle(request('login/start', { projectId }))
+    await controller.handle(request('login/start', { projectId, ready: true }))
     expect((await test.create('owner-b').handle(request('login/finish', {}))).status).toBe(400)
     expect(test.browser.readSession).not.toHaveBeenCalled()
     await controller.handle(request('unlink', {}))
@@ -170,7 +220,7 @@ describe('hosted Overleaf login', () => {
     const test = setup()
     test.browser.readSession.mockResolvedValueOnce(undefined)
     const controller = test.create()
-    await controller.handle(request('login/start', { projectId }))
+    await controller.handle(request('login/start', { projectId, ready: true }))
     await controller.handle(request('login/watch', {}))
     test.advance(LOGIN_CHECK_MS)
     await test.create().alarm()
@@ -193,9 +243,9 @@ describe('hosted Overleaf login', () => {
     expect(test.browser.close).toHaveBeenCalledOnce()
   })
 
-  it('closes an unopened attempt without polling or consuming the full four minutes', async () => {
+  it('closes an unopened attempt without polling or consuming the full minute', async () => {
     const test = setup()
-    await test.create().handle(request('login/start', { projectId }))
+    await test.create().handle(request('login/start', { projectId, ready: true }))
     test.advance(LOGIN_OPEN_TIMEOUT_MS)
     await test.create().alarm()
     expect(test.browser.readSession).not.toHaveBeenCalled()
@@ -207,7 +257,7 @@ describe('hosted Overleaf login', () => {
     const test = setup()
     test.browser.readSession.mockResolvedValue(undefined)
     const controller = test.create()
-    await controller.handle(request('login/start', { projectId }))
+    await controller.handle(request('login/start', { projectId, ready: true }))
     await controller.handle(request('login/watch', {}))
     test.advance(LOGIN_TIMEOUT_MS - 1000)
     await controller.alarm()
@@ -222,7 +272,7 @@ describe('hosted Overleaf login', () => {
   it('retries a failed manual completion close before expiry and retains its original outcome', async () => {
     const test = setup()
     const controller = test.create()
-    await controller.handle(request('login/start', { projectId }))
+    await controller.handle(request('login/start', { projectId, ready: true }))
     test.advance(10000)
     test.browser.close.mockRejectedValueOnce(new Error('private provider message'))
     expect(await (await controller.handle(request('login/finish', {}))).json()).toMatchObject({
@@ -247,12 +297,12 @@ describe('hosted Overleaf login', () => {
       throw new Error('private cookie/token')
     })
     const controller = test.create()
-    expect((await controller.handle(request('login/start', { projectId }))).status).toBe(400)
+    expect((await controller.handle(request('login/start', { projectId, ready: true }))).status).toBe(400)
     let body = await (await controller.handle(request('status'))).json<Status>()
     expect(body.usage).toMatchObject([{ outcome: 'launch_failed', elapsedMs: 2000, timing: 'unavailable' }])
     expect(body.usage[0]!.browserMs).toBeUndefined()
     test.browser.view.mockRejectedValueOnce(new Error('private cookie/token'))
-    expect((await controller.handle(request('login/start', { projectId }))).status).toBe(400)
+    expect((await controller.handle(request('login/start', { projectId, ready: true }))).status).toBe(400)
     body = await (await controller.handle(request('status'))).json<Status>()
     expect(body.usage[0]!.outcome).toBe('failed')
     expect(JSON.stringify(body)).not.toMatch(/private|sessionId|loginUrl/)
@@ -262,7 +312,7 @@ describe('hosted Overleaf login', () => {
   it('closes and records a failed automatic check without launching another browser', async () => {
     const test = setup()
     const controller = test.create()
-    await controller.handle(request('login/start', { projectId }))
+    await controller.handle(request('login/start', { projectId, ready: true }))
     await controller.handle(request('login/watch', {}))
     test.browser.readSession.mockRejectedValueOnce(new Error('private remote response'))
     test.advance(LOGIN_CHECK_MS)
@@ -277,7 +327,7 @@ describe('hosted Overleaf login', () => {
     const test = setup()
     for (let i = 0; i < 24; i++) {
       const controller = test.create()
-      expect((await controller.handle(request('login/start', { projectId }))).status).toBe(200)
+      expect((await controller.handle(request('login/start', { projectId, ready: true }))).status).toBe(200)
       test.advance(1000)
       await controller.handle(request('login/cancel', {}))
       test.advance(86400000)
@@ -300,7 +350,7 @@ describe('hosted Overleaf login', () => {
   it('treats provider usage lookup failures as estimates and still closes promptly', async () => {
     const test = setup()
     const controller = test.create()
-    await controller.handle(request('login/start', { projectId }))
+    await controller.handle(request('login/start', { projectId, ready: true }))
     test.advance(2345)
     test.browser.usage.mockRejectedValueOnce(new Error('history unavailable'))
     await controller.handle(request('login/cancel', {}))

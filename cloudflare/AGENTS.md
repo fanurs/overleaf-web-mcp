@@ -7,9 +7,11 @@ The owner requires zero Cloudflare usage charges for this integration.
 - Never upgrade a plan or enable a paid service to resolve a build or runtime failure.
 - Use the existing Worker and SQLite-backed Durable Object. Browser Run on Workers Free is
   allowed only for the owner-authorized browser-only Overleaf login flow. Use a dedicated
-  temporary browser, a four-minute absolute deadline, one-minute idle timeout, and explicit
-  closure after completion or cancellation. Never enable session recordings. Close unopened
-  links after one minute, detect successful login automatically, and retain manual completion.
+  temporary browser, a 60-second absolute deadline including startup, one-minute idle timeout, and explicit
+  closure after completion or cancellation. Never enable session recordings. Never start a timed login on behalf of the owner. Preparation pages must not allocate a browser.
+  Require the owner to click Start on a visible, focused preparation page, open Live View in that
+  same tab, and close unfinished handoffs after 20 seconds. Cancel startup on focus loss, detect successful login automatically, and retain manual completion. Usage cannot be paused by switching away from Live View;
+  be candid that provider or network delays can delay confirmed closure.
   Polling can keep a browser active; never rely on provider idle timeout as the only cutoff.
 - Show elapsed time and persist a private duration/outcome record for every login attempt.
   Distinguish provider-reported duration, estimates, and unavailable measurements. Never log
@@ -28,3 +30,9 @@ The owner requires zero Cloudflare usage charges for this integration.
   Do not commit tokens, encryption keys, Overleaf session files, or document contents.
 - Until a live Overleaf read and the ChatGPT MCP actions have passed, describe this checkpoint
   as a connection test, not as a working editing plugin.
+
+- The optional local browser helper may transfer only Overleaf cookies to this exact private
+  setup service, on the owner's explicit click. Keep its two-site permissions, authenticated
+  same-origin upload, no-background behavior, and no-cookie-output boundary. Do not operate
+  cookie-export APIs through the assistant's browser tools or install the helper for the owner.
+  Package only the reviewed source allowlist, never a browser profile or credentials.
