@@ -7,10 +7,18 @@ import { decryptSession, encryptSession, type EncryptedSession } from './crypto.
 import { boundedJson, json } from './http.js'
 import { HostedLogin, type HostedLoginOptions } from './hosted-login.js'
 import { runProbe } from './probe.js'
+import { remoteMcpHandler, type RemoteTool } from '../../src/mcp/remote.js'
+import { OPERATIONS } from '../../src/contracts/operations.js'
+import { parseOperationInput } from '../../src/contracts/parse.js'
+import { readBoundedBody } from '../../src/core/bounded-body.js'
+import { createCloudRuntime } from './runtime.js'
+import { runEditTest, type EditTestResult } from './self-test.js'
 
 interface SessionData {
   jar: string
   projectId: string
+  verifiedAt?: number
+  editTest?: EditTestResult
 }
 
 export interface SessionStorage {
@@ -64,14 +72,80 @@ export class SessionController {
     await this.storage.put('session', await encryptSession(JSON.stringify(data), this.secret, this.owner))
   }
 
+  async #load(): Promise<SessionData | undefined> {
+    const saved = await this.storage.get('session')
+    return saved ? (JSON.parse(await decryptSession(saved, this.secret, this.owner)) as SessionData) : undefined
+  }
+
+  async #remote(request: Request): Promise<Response> {
+    // Stateless HTTP only; no idle SSE, subscriptions or request batches that could race writes.
+    if (request.method !== 'POST') return json({ code: 'METHOD_NOT_ALLOWED' }, 405)
+    if (request.headers.get('Content-Type')?.split(';')[0]?.trim() !== 'application/json')
+      return json({ code: 'JSON_REQUIRED' }, 415)
+    const parsed = await boundedJson(request, 262144)
+    if (Array.isArray(parsed)) return json({ code: 'BATCH_NOT_SUPPORTED' }, 400)
+    const handler = remoteMcpHandler({
+      status: async () => {
+        const data = await this.#load()
+        return {
+          linked: !!data,
+          projectId: data?.projectId,
+          readVerifiedAt: data?.verifiedAt,
+          editingVerified: data?.editTest?.status === 'passed',
+          cloudBrowserSeconds: 0,
+          setupUrl: 'https://overleaf-mcp.fanurs.com/connect',
+        }
+      },
+      call: async (name: RemoteTool, input: unknown) => {
+        const data = await this.#load()
+        if (!data) throw new McpError('AUTH_EXPIRED', 'No Overleaf session is saved. Open the connection setup page.')
+        if (!('readOnlyHint' in OPERATIONS[name].annotations) && data.editTest?.status !== 'passed') {
+          throw new McpError(
+            'POLICY_DENIED',
+            'Complete the disposable editing test on the setup page before editing or compiling through ChatGPT.'
+          )
+        }
+        const parsedInput = parseOperationInput(name, input)
+        if ('localPath' in parsedInput) throw new McpError('POLICY_DENIED', 'Server disk paths are not available.')
+        const jar = await CookieJar.deserialize(data.jar)
+        let runtime: Awaited<ReturnType<typeof createCloudRuntime>> | undefined
+        try {
+          runtime = await createCloudRuntime(jar, data.projectId)
+          const call = runtime.service[name] as (args: unknown) => Promise<unknown>
+          return await call(parsedInput)
+        } finally {
+          await runtime?.close()
+          await this.#save({ ...data, jar: JSON.stringify(await jar.serialize()) })
+        }
+      },
+    })
+    try {
+      const response = await handler.fetch(request, { parsedBody: parsed })
+      // Draining the single exchange also waits for legacy SSE completion before releasing the
+      // owner's FIFO lock. No live Overleaf runtime or response stream survives the request.
+      const body = response.body ? await readBoundedBody(response.body, 2 * 1024 * 1024) : undefined
+      if (body?.truncated) return json({ code: 'RESULT_TOO_LARGE', retryable: false }, 413)
+      const headers = new Headers(response.headers)
+      headers.set('Cache-Control', 'no-store')
+      return new Response(body ? Uint8Array.from(body.bytes).buffer : null, { status: response.status, headers })
+    } finally {
+      await handler.close()
+    }
+  }
+
   async handle(request: Request): Promise<Response> {
     return await this.#queue.run(async () => {
       try {
         const path = new URL(request.url).pathname
+        if (path === '/mcp') return await this.#remote(request)
         if (request.method === 'GET' && path === '/api/status') {
+          const data = await this.#load()
           return json({
-            linked: (await this.storage.get('session')) !== undefined,
-            mode: 'read-only-probe',
+            linked: !!data,
+            mode: 'remote-mcp',
+            projectId: data?.projectId,
+            verifiedAt: data?.verifiedAt,
+            editTest: data?.editTest,
             hostedLogin: !!this.#login,
             login: await this.#login?.status(),
             usage: (await this.#login?.history()) ?? [],
@@ -146,9 +220,28 @@ export class SessionController {
           const jar = await CookieJar.deserialize(data.jar)
           try {
             const result = await this.probe(jar, data.projectId)
+            data.verifiedAt = Date.now()
             return json(result)
           } finally {
             // Preserve any renewed cookies even when a later protocol step failed.
+            await this.#save({ ...data, jar: JSON.stringify(await jar.serialize()) })
+          }
+        }
+        if (path === '/api/edit-test') {
+          const data = await this.#load()
+          if (!data) return json({ code: 'SESSION_REQUIRED' }, 409)
+          if (data.editTest?.status === 'passed') return json(data.editTest)
+          if (data.editTest && !data.editTest.trashed)
+            return json({ code: 'TEST_REVIEW_REQUIRED', editTest: data.editTest }, 409)
+          const jar = await CookieJar.deserialize(data.jar)
+          try {
+            return json(
+              await runEditTest(jar, async result => {
+                data.editTest = { ...result }
+                await this.#save(data)
+              })
+            )
+          } finally {
             await this.#save({ ...data, jar: JSON.stringify(await jar.serialize()) })
           }
         }
@@ -163,7 +256,12 @@ export class SessionController {
               : new URL(request.url).pathname.startsWith('/api/login/')
                 ? 'LOGIN_FAILED'
                 : 'PROBE_FAILED'
-        return json({ code, changedDocuments: false }, 400)
+        return json(
+          new URL(request.url).pathname === '/mcp'
+            ? { code: 'MCP_REQUEST_FAILED', retryable: false }
+            : { code, changedDocuments: false },
+          400
+        )
       }
     })
   }

@@ -103,6 +103,53 @@ try {
   assert.deepEqual(await json('/api/link', ownerA, link), { linked: true, verified: false })
   assert.equal((await json('/api/status', ownerA)).linked, true)
   assert.equal((await json('/api/status', ownerB)).linked, false)
+  async function mcp(assertion, method, params = {}, requestOrigin) {
+    return await runtime.dispatchFetch(`${origin}/mcp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        'MCP-Protocol-Version': '2025-06-18',
+        ...(assertion ? { 'Cf-Access-Jwt-Assertion': assertion } : {}),
+        ...(requestOrigin ? { Origin: requestOrigin } : {}),
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+    })
+  }
+  async function rpc(response) {
+    const text = await response.text()
+    return JSON.parse(
+      text.startsWith('event:')
+        ? text
+            .split('\n')
+            .find(line => line.startsWith('data:'))
+            .slice(5)
+        : text
+    )
+  }
+  assert.equal((await mcp(undefined, 'tools/list')).status, 401)
+  assert.equal((await mcp(ownerA, 'tools/list', {}, 'https://hostile.example')).status, 403)
+  const listed = await rpc(await mcp(ownerA, 'tools/list'))
+  assert.equal(listed.result.tools.length, 12)
+  assert.ok(!listed.result.tools.some(tool => tool.name === 'manage_project'))
+  const statusA = await rpc(await mcp(ownerA, 'tools/call', { name: 'connection_status', arguments: {} }))
+  const statusB = await rpc(await mcp(ownerB, 'tools/call', { name: 'connection_status', arguments: {} }))
+  assert.equal(statusA.result.structuredContent.projectId, link.projectId)
+  assert.equal(statusB.result.structuredContent.linked, false)
+  assert.equal(JSON.stringify(statusA).includes('synthetic-session'), false)
+  const locked = await rpc(
+    await mcp(ownerA, 'tools/call', {
+      name: 'write_file',
+      arguments: {
+        projectId: link.projectId,
+        filePath: 'main.tex',
+        revision: 'fixture',
+        content: 'new',
+      },
+    })
+  )
+  assert.equal(locked.result.isError, true)
+  assert.match(JSON.stringify(locked), /POLICY_DENIED/u)
   assert.equal((await json('/api/probe', ownerB, {}, 409)).code, 'SESSION_REQUIRED')
   assert.equal((await json('/api/unlink', ownerA, {})).linked, false)
   assert.equal((await json('/api/status', ownerA)).linked, false)

@@ -13,7 +13,7 @@ export function validSetupRequest(request: Request): boolean {
   )
 }
 
-export async function boundedJson(request: Request): Promise<unknown> {
+export async function boundedJson(request: Request, limit = 70000): Promise<unknown> {
   const reader = request.body?.getReader()
   if (!reader) throw new Error('BODY_REQUIRED')
   const chunks: Uint8Array[] = []
@@ -22,7 +22,7 @@ export async function boundedJson(request: Request): Promise<unknown> {
     const { value, done } = await reader.read()
     if (done) break
     size += value.byteLength
-    if (size > 70000) {
+    if (size > limit) {
       await reader.cancel()
       throw new Error('BODY_TOO_LARGE')
     }

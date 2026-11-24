@@ -13,6 +13,19 @@ below. Before 1.0.0, a minor or patch release could change them, and each such c
 
 ### Added
 
+- The private Cloudflare adapter exposes authenticated Streamable HTTP at `/mcp`, with
+  `connection_status` and eleven existing operations for listing the connected project,
+  reading its tree/text/sections, creating text files, revision-checked edits, and compilation/logs.
+  The saved project's allowlist is enforced by the existing service and domain engines;
+  server disk paths, account management, deletion, and uploads are not exposed. Every call
+  closes its Overleaf sockets and persists renewed cookies. Both legacy and modern MCP
+  requests are supported without an idle session stream.
+- Editing and compilation stay locked until an explicit disposable-project test passes.
+  This test creates its own project under an initially empty allowlist, verifies reading,
+  one edit, stale-revision refusal and one compile, and moves the project to Trash. Its
+  private progress persists across interruptions; interrupted creation is never repeated
+  automatically. The setup page retains read verification and test results after reload.
+
 - An optional Chrome/Edge helper under `cloudflare/extension/` transfers an existing Overleaf
   session directly to the authenticated private setup service on an explicit click. No cloud
   browser is started, no cookies are displayed or saved locally, and no background transfer

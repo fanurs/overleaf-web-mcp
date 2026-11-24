@@ -1,16 +1,33 @@
 # Cloudflare connection test
 
-This is a prepared, read-only deployment for the personal ChatGPT Overleaf integration.
-It verifies authenticated HTTP, the legacy Socket.IO connection, and reading one existing
-text document from the selected project. It uses the configured main document when available,
-otherwise an existing TeX document or another text document. It never changes the compile root. It does not yet offer an MCP endpoint or document editing.
-The live Overleaf connection must pass before the editing adapter is built out.
+This is Fanurs' private Cloudflare adapter for ChatGPT. The authenticated endpoint is
+`https://overleaf-mcp.fanurs.com/mcp`, using Streamable HTTP behind Cloudflare Access.
+The setup page is `https://overleaf-mcp.fanurs.com/connect`. A server deployment alone does
+not connect ChatGPT. Managed OAuth and the ChatGPT plugin connection must also be completed.
 
-The implementation uses a Worker and a SQLite Durable Object, both available on Workers Free.
-There is no container, model API, or local server that must stay running. An optional browser helper transfers the existing Overleaf session without cloud-browser time.
-Alternatively, a temporary hosted browser is used only for sign-in, then closed; normal document
-access uses the saved session.
-Overleaf's existing protocol engine is reused. The socket closes after each test.
+It exposes `connection_status`, `list_projects`, `get_project_tree`, `read_file`, `write_file`,
+`create_file`, `get_full_document`, `get_sections`, `get_section_content`, `write_section`,
+`compile_project`, and `get_compile_log`. Only the project selected by the saved setup session
+is allowed. The existing service/domain engine handles revisions, tracked edits, conflict
+checks and read-back verification. The remote adapter exposes no account-management, deletion,
+upload or server-disk tool. Writes accept text or exact-match edits, never `localPath`.
+Documents are limited to 200,000 characters, updates to 10,000 characters, request bodies to
+256 KiB and compile requests to 30 seconds (20 seconds by default). Large includes or outputs
+may hit runtime/provider limits; no paid fallback is used.
+
+A Worker and SQLite Durable Object run on Workers Free. There is no container, model API,
+or local server that must stay running. The helper transfers an existing login without
+Browser Run time. Document operations use that saved session directly and close every socket
+at the end of each call. Metadata/discovery calls do not contact Overleaf. Calls are serialized
+per verified Access identity, including completion of the legacy response stream, so unlink
+cannot be overwritten by a still-running cookie refresh.
+
+Before editing is enabled, click **Run disposable editing test**. It creates a separate project,
+reads and edits its stub, refuses an old revision, compiles once, then trashes the test project.
+The connected manuscript is outside that test runtime's allowlist. The result and progress are
+saved privately, without document content. An interrupted/ambiguous creation is not automatically
+repeated. Review the reported project before retrying a test that did not confirm cleanup.
+Trash can be emptied by the owner later; the test never permanently deletes anything.
 
 ## Deploy this checkpoint
 
@@ -243,12 +260,27 @@ References for this flow:
 <https://developers.cloudflare.com/browser-run/puppeteer/>, and
 <https://developers.cloudflare.com/browser-run/limits/>.
 
-## Later ChatGPT connection
+## ChatGPT connection
 
-Do not add this probe to ChatGPT yet. After the live read succeeds, the next implementation adds
-the remote MCP tools, revision-checked edits, and compilation. Then enable Access Managed OAuth,
-configure the ChatGPT callback, and connect `https://overleaf-mcp.fanurs.com/mcp` in ChatGPT.
-The assistant will provide those exact steps when the MCP endpoint exists.
+After the disposable editing test passes, configure **Managed OAuth** on the existing
+Overleaf Access application, under its advanced settings. Preserve the owner-only policy,
+application audience and domains. Restrict registered redirect URIs to the actual ChatGPT
+callback; do not allow arbitrary localhost, loopback or unrelated clients. Use the same
+setup identity for OAuth so the verified subject maps to the existing saved session.
+
+Cloudflare handles OAuth discovery, authorization, refresh and the exchange to the origin's
+`Cf-Access-Jwt-Assertion`; the Worker independently validates its signature, issuer, audience
+and expiration before routing to the identity's Durable Object. No custom OAuth secret store
+or bearer-token bypass is added. Keep the deployed application's domain route protected and
+its workers.dev/previews disabled.
+
+Connect `https://overleaf-mcp.fanurs.com/mcp` to ChatGPT with OAuth. Verify `connection_status`
+and a read before claiming the plugin works. The setup and real editing test are separate
+from the ChatGPT authorization and tool-discovery checks. Repeat the helper transfer only
+when Overleaf expires or revokes its session; no hosted browser is needed for normal use.
+
+Managed OAuth reference:
+<https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/>.
 
 ## Developer checks
 

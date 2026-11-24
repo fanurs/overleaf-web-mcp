@@ -4,7 +4,7 @@ export const SETUP_HTML = `<!doctype html>
 <style>body{font:17px/1.55 system-ui,sans-serif;max-width:760px;margin:40px auto;padding:0 24px;color:#1b2930;background:#fafcfb}h1{line-height:1.2}h2{font-size:1.15em}section,details{background:white;border:1px solid #dce5df;border-radius:12px;padding:20px;margin:20px 0}label{display:block;margin:16px 0 6px}input,button{font:inherit;padding:10px;box-sizing:border-box}input{width:100%}button,.button{display:inline-block;margin:12px 8px 0 0;cursor:pointer;border:1px solid #27764d;border-radius:6px;background:#fff;color:#185333;text-decoration:none}.primary{background:#185333;color:white}button:disabled{opacity:.5;cursor:default}.button{padding:10px}pre{white-space:pre-wrap;background:#edf3ef;padding:18px;border-radius:8px}small{display:block;color:#52606a}a{color:#216a4f}[hidden]{display:none!important}summary{cursor:pointer}table{width:100%;border-collapse:collapse;font-size:.9rem}th,td{text-align:left;padding:9px 6px;border-bottom:1px solid #dbe3dd}#usage-table{overflow-x:auto}#elapsed{font-size:1.15rem;font-weight:bold}#login-panel{border-left:4px solid #27764d;padding-left:16px}</style>
 </head><body><h1>Connect your Overleaf account</h1>
 <p>You are signed into this private setup page. Choose how to connect below. Opening this setup page does not start a cloud browser or a timer.</p>
-<p><strong>Overleaf connection test</strong> checks whether the service can read your selected project. Document editing and the ChatGPT plugin are not enabled yet.</p>
+<p><strong>Overleaf connection test</strong> checks whether the service can read your selected project. The remote MCP server is available after setup. Editing stays locked until the disposable project test below passes. ChatGPT must then be connected separately.</p>
 <section><h2>1. Choose a project</h2>
 <label for="project">Overleaf project URL</label><input id="project" type="url" placeholder="https://www.overleaf.com/project/...">
 <small>Paste the URL from your open Overleaf project. The connection test does not change its documents.</small>
@@ -29,6 +29,12 @@ export const SETUP_HTML = `<!doctype html>
 <h2>3. Test the connection</h2>
 <button id="probe">Test connection</button><button id="unlink">Remove saved session</button>
 <pre id="result" role="status" aria-live="polite">Checking connection...</pre>
+<h2>4. Verify editing on a disposable project</h2>
+<p>This test creates a separate temporary project, verifies reading, editing, conflict protection and compilation, then moves it to Trash. It does not edit your selected project. It uses zero cloud-browser seconds and one Overleaf compile.</p>
+<button id="edit-test">Run disposable editing test</button><pre id="edit-result">Not run yet.</pre>
+<h2>5. Connect ChatGPT</h2><p>Use this MCP server URL with OAuth authentication after the editing test passes and OAuth is configured.</p>
+<p><a href="https://overleaf-mcp.fanurs.com/mcp">https://overleaf-mcp.fanurs.com/mcp</a></p>
+<p>Sign in with the same identity used for this setup page. Tools can access only the connected project. Unlinking below revokes access to its saved Overleaf login.</p>
 </section>
 <section><h2>Cloud-browser time</h2>
 <p id="usage-summary">No timed attempts recorded yet.</p>
@@ -90,9 +96,11 @@ function scheduleRefresh(){clearTimeout(pollTimer);pollTimer=pending?setTimeout(
 async function refresh(announce=false){
  const value=await call('/api/status');if(!value)return;
  const wasPending=!!pending;
+ if(value.projectId&&!document.querySelector('#project').value)document.querySelector('#project').value='https://www.overleaf.com/project/'+value.projectId;
+ document.querySelector('#edit-result').textContent=value.editTest?JSON.stringify(value.editTest,null,2):'Not run yet.';
  renderUsage(value.usage||[]);
  if(value.login){pending=value.login;elapsedBase=pending.elapsedMs;elapsedAt=performance.now();panel.hidden=false;startClock();drawTimer();scheduleRefresh();if(announce)result.textContent=pending.closing?'Closing the cloud browser. Cleanup is automatic.':pending.watching?'Waiting for Overleaf sign-in. Automatic completion is active.':'Sign-in is starting in the preparation tab. Cancel below if you have stepped away.'}
- else{clearLogin();if(announce||wasPending){const last=(value.usage||[])[0];result.textContent=value.linked?'Overleaf session saved. Click Test connection to verify it.':last&&wasPending?'Cloud browser closed. '+(outcomes[last.outcome]||last.outcome)+'. See the time log below.':'Overleaf is not connected yet. Paste your project URL, then choose a connection method.'}}
+ else{clearLogin();if(announce||wasPending){const last=(value.usage||[])[0];result.textContent=value.linked?(value.editTest&&value.editTest.status==='passed'?'Overleaf reading and editing test passed. Ready for the separate ChatGPT OAuth connection.':value.verifiedAt?'Overleaf read connection verified. Run the disposable editing test next.':'Overleaf session saved. Click Test connection to verify it.'):last&&wasPending?'Cloud browser closed. '+(outcomes[last.outcome]||last.outcome)+'. See the time log below.':'Overleaf is not connected yet. Paste your project URL, then choose a connection method.'}}
 }
 async function act(run){busy=true;const buttons=document.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);result.textContent='Working...';try{await run()}catch{result.textContent='The request failed. Reload the page if needed; server-side cleanup remains active.'}finally{try{await refresh()}catch{}busy=false;buttons.forEach(b=>b.disabled=false)}}
 function projectId(){
@@ -119,6 +127,7 @@ document.querySelector('#link').onclick=()=>act(async()=>{
  if(await call('/api/link',{cookies:await file.text(),projectId:id})){document.querySelector('#session').value='';clearLogin();result.textContent='Session saved. Click Test connection next.'}
 });
 document.querySelector('#probe').onclick=()=>act(async()=>{const value=await call('/api/probe',{});if(value)result.textContent='Connection verified. The service signed into Overleaf, joined your project, and read a text document without editing it.'+(value.documentSelection==='project_document'?' Overleaf did not report a usable configured main document, so the test read another existing text document.':'')+'\\n\\n'+JSON.stringify(value,null,2)});
+document.querySelector('#edit-test').onclick=()=>act(async()=>{result.textContent='Testing a separate disposable project. No cloud browser is running.';const value=await call('/api/edit-test',{});if(value){document.querySelector('#edit-result').textContent=JSON.stringify(value,null,2);result.textContent=value.status==='passed'?'Editing test passed. The temporary project is in Trash. Cloud-browser time used: 0 seconds.':'Editing test did not complete. The result below identifies the completed steps. Do not repeat it blindly.'}});
 document.querySelector('#unlink').onclick=()=>act(async()=>{if(await call('/api/unlink',{})){clearLogin();result.textContent='Saved Overleaf session removed.'}});
 act(()=>refresh(true));
 `

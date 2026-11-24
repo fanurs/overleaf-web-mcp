@@ -55,6 +55,12 @@ export default {
       return json({ code: 'ACCESS_REQUIRED' }, 401)
     }
     const url = new URL(request.url)
+    if (url.pathname === '/mcp') {
+      const origin = request.headers.get('Origin')
+      if (origin && origin !== url.origin && origin !== 'https://chatgpt.com')
+        return json({ code: 'ORIGIN_REFUSED' }, 403)
+      return await env.SESSIONS.get(env.SESSIONS.idFromName(owner)).fetch(request)
+    }
     const pageHeaders = {
       'Cache-Control': 'no-store',
       'X-Content-Type-Options': 'nosniff',
@@ -89,6 +95,6 @@ export default {
       const id = env.SESSIONS.idFromName(owner)
       return await env.SESSIONS.get(id).fetch(request)
     }
-    return json({ code: 'NOT_FOUND', mode: 'read-only-probe' }, 404)
+    return json({ code: 'NOT_FOUND', mode: 'remote-mcp' }, 404)
   },
 } satisfies ExportedHandler<Env>
