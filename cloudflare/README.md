@@ -133,8 +133,10 @@ Use the same setup-page identity each time, because each identity has separate s
 2. Click **Sign in to Overleaf**, then **Open Overleaf sign-in window** within one minute.
 3. In Cloudflare's Live View, sign into Overleaf normally, including institutional or Google
    login if needed. Credentials are entered on those sites inside a temporary cloud browser.
-4. Return to the setup page and click **I've signed in - finish connecting**. The service saves
-   only Overleaf cookies, encrypted, and closes the entire temporary browser.
+4. After the Overleaf projects page appears, the service detects login, saves only Overleaf
+   cookies encrypted, and closes the entire cloud browser automatically. A **Finish connecting**
+   button remains available to trigger this immediately yourself. Return to the setup page
+   to see the saved-session status and browser time.
 5. Click **Test connection**. Success returns `authenticated`, `projectJoined`, and
    `documentRead` as true, a character count, and a protocol name. No document text is returned.
 
@@ -152,9 +154,15 @@ Browser Run is used only during interactive sign-in. It is not used for each doc
 Workers Free permits ten browser minutes per day across the account and rejects further
 attempts with HTTP 429. This service also limits each verified identity to two launches per
 UTC day, including failed launches. A login has a four-minute absolute deadline enforced by a
-Durable Object alarm, plus a one-minute provider inactivity timeout. Refreshing a Live View
-link does not extend the deadline or launch another browser. Cancellation, completion, and
-expiry close the browser. Cleanup failures keep the encrypted browser ID for an alarm retry.
+Durable Object alarm. A link that is not opened closes after one minute without login polling.
+Opening the login link starts server-side checks every five seconds. The checks continue if the
+setup tab closes and stop once the browser closes. The one-minute provider inactivity timeout
+is retained, but active checks or Live View can keep it alive, so the four-minute server deadline
+is the authoritative cutoff. Refreshing a link never extends that deadline or launches another
+browser. Cancellation, completion, failures, and expiry close the browser. The close intent is
+persisted before shutdown; cleanup failures retry after five seconds even before the deadline.
+Automatic detection adds at most one check interval under normal provider response times;
+network failures and alarm scheduling can delay shutdown. Nothing relaunches a failed browser.
 Cloudflare Free is the billing guard; these application limits are additional usage controls.
 
 The Live View URL temporarily grants control of the login browser. Deliver it only through the
@@ -162,6 +170,24 @@ owner-authenticated setup response and never log it, commit it, or paste it into
 restricted to HTTPS `live.browser.run/ui/`, expire for new connections after one minute, and
 become unusable when the browser closes. Session recording is not requested. The service
 never stores identity-provider cookies, passwords, page HTML, or screenshots.
+
+#### Per-attempt time log
+
+The setup page shows a running elapsed-time estimate during login and a time/result record
+for every attempt started with this version, including cancelled, expired, unopened, and failed
+attempts. Provider-reported `endTime - startTime` is used when Cloudflare session history is
+available at closure. Otherwise a clearly labeled estimate spans the start request through
+confirmed closure. A rejected launch is marked `unavailable`, with request elapsed time but
+no invented zero browser usage. These are operational measurements, not invoice guarantees.
+
+The most recent 20 records are displayed. **Download complete time log (JSON)** exports every
+record via the authenticated `/api/login/history` endpoint. Records are retained in encrypted
+monthly batches in the existing owner-isolated Durable Object; no paid logging service or
+recording is enabled. They contain timestamps, durations, an unrelated random record ID, and
+outcome only. No browser-session ID, control URL, credentials, or document content is logged.
+Removing an Overleaf session does not erase this usage history. Earlier attempts cannot be
+reconstructed and are explicitly excluded. Different setup identities have separate logs;
+Cloudflare's ten-minute allowance remains shared across the full Cloudflare account.
 
 #### Verified checkpoint and remaining uncertainty
 

@@ -13,6 +13,12 @@ below. Before 1.0.0, a minor or patch release could change them, and each such c
 
 ### Added
 
+- Cloudflare sign-in automatically saves the session and closes the browser after detecting
+  login, with manual completion retained. Unopened attempts close after one minute. The setup
+  page shows elapsed time and a private per-attempt duration/outcome log with complete JSON
+  export, distinguishing Cloudflare-reported browser time from estimates or unavailable data.
+  Shutdown retries persist across restarts and run even before the four-minute deadline.
+
 - Browser-only Overleaf sign-in through a temporary Cloudflare Browser Run Live View, with
   encrypted owner-isolated session capture, cancellation, automatic cleanup, and daily attempt
   limits. The connection page no longer requires a local command or session-file upload.

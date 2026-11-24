@@ -53,7 +53,9 @@ export class SessionController {
 
   async alarm(): Promise<void> {
     await this.#queue.run(async () => {
-      await this.#login?.expire()
+      await this.#login?.tick(async (jar, projectId) => {
+        await this.#save({ jar: JSON.stringify(await jar.serialize()), projectId })
+      })
     })
   }
 
@@ -64,7 +66,6 @@ export class SessionController {
   async handle(request: Request): Promise<Response> {
     return await this.#queue.run(async () => {
       try {
-        await this.#login?.expire()
         const path = new URL(request.url).pathname
         if (request.method === 'GET' && path === '/api/status') {
           return json({
@@ -72,9 +73,17 @@ export class SessionController {
             mode: 'read-only-probe',
             hostedLogin: !!this.#login,
             login: await this.#login?.status(),
+            usage: (await this.#login?.history()) ?? [],
+            serverTime: Date.now(),
           })
         }
+        if (request.method === 'GET' && path === '/api/login/history') {
+          const response = json({ sessions: (await this.#login?.history(true)) ?? [] })
+          response.headers.set('Content-Disposition', 'attachment; filename=overleaf-login-usage.json')
+          return response
+        }
         if (request.method !== 'POST') return json({ code: 'NOT_FOUND' }, 404)
+        await this.#login?.expire()
         if (path.startsWith('/api/login/')) {
           if (!this.#login) return json({ code: 'HOSTED_LOGIN_UNAVAILABLE' }, 503)
           if (path === '/api/login/start') {
@@ -88,14 +97,25 @@ export class SessionController {
               return json({ code: 'INVALID_INPUT' }, 400)
             return json(await this.#login.start(input.projectId))
           }
+          if (path === '/api/login/watch') {
+            await this.#login.watch()
+            return json({ watching: true })
+          }
           if (path === '/api/login/cancel') {
             await this.#login.cancel()
             return json({ loginClosed: true })
           }
           if (path === '/api/login/finish') {
+            if (
+              !(await this.#login.status()) &&
+              (await this.#login.history())[0]?.outcome === 'connected' &&
+              (await this.storage.get('session'))
+            ) {
+              return json({ linked: true, verified: false, loginClosed: true })
+            }
             const { jar, projectId } = await this.#login.finish()
             await this.#save({ jar: JSON.stringify(await jar.serialize()), projectId })
-            await this.#login.cancel()
+            await this.#login.cancel('connected', 'manual')
             return json({ linked: true, verified: false, loginClosed: true })
           }
         }

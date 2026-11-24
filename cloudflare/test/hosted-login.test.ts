@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { checkedLiveView, overleafCookies, type HostedBrowser } from '../src/hosted-browser.js'
-import { LOGIN_TIMEOUT_MS } from '../src/hosted-login.js'
+import { LOGIN_CHECK_MS, LOGIN_OPEN_TIMEOUT_MS, LOGIN_TIMEOUT_MS, type LoginUsage } from '../src/hosted-login.js'
 import type { EncryptedSession } from '../src/crypto.js'
 import { SessionController, type SessionStorage } from '../src/session.js'
 
@@ -16,6 +16,8 @@ const cookie = {
   httpOnly: true,
   expires: -1,
 }
+type Status = { linked: boolean; login?: { closing: boolean }; usage: LoginUsage[] }
+
 const request = (path: string, body?: unknown) =>
   new Request(`https://app.example/api/${path}`, {
     method: body === undefined ? 'GET' : 'POST',
@@ -37,6 +39,7 @@ function setup() {
     view: vi.fn(async () => 'https://live.browser.run/ui/view?fixture-private-link'),
     readSession: vi.fn<HostedBrowser['readSession']>(async () => await overleafCookies([cookie])),
     close: vi.fn(async () => {}),
+    usage: vi.fn<HostedBrowser['usage']>(async () => undefined),
   } satisfies HostedBrowser
   const setAlarm = vi.fn<(time: number) => Promise<void>>(async () => {})
   const options = { browser, setAlarm, now: () => now }
@@ -59,7 +62,7 @@ describe('hosted Overleaf login', () => {
     const initial = await test.create().handle(request('login/start', { projectId }))
     const body = await initial.json<{ loginUrl: string; expiresAt: number }>()
     expect(body.loginUrl).toMatch(/^https:\/\/live.browser.run\/ui\//)
-    expect(test.setAlarm).toHaveBeenCalledWith(body.expiresAt)
+    expect(test.setAlarm).toHaveBeenCalledWith(body.expiresAt - LOGIN_TIMEOUT_MS + LOGIN_OPEN_TIMEOUT_MS)
     expect(JSON.stringify([...test.entries])).not.toContain('private-fixture')
     const restored = test.create()
     const status = await (await restored.handle(request('status'))).json<{ login: { expiresAt: number } }>()
@@ -162,6 +165,148 @@ describe('hosted Overleaf login', () => {
     await controller.handle(request('unlink', {}))
     expect(test.browser.close).toHaveBeenCalledOnce()
     expect(test.entries.has('login')).toBe(false)
+  })
+  it('automatically saves and closes within a check after sign-in, without a setup page request', async () => {
+    const test = setup()
+    test.browser.readSession.mockResolvedValueOnce(undefined)
+    const controller = test.create()
+    await controller.handle(request('login/start', { projectId }))
+    await controller.handle(request('login/watch', {}))
+    test.advance(LOGIN_CHECK_MS)
+    await test.create().alarm()
+    expect(test.entries.has('session')).toBe(false)
+    test.advance(LOGIN_CHECK_MS)
+    test.browser.usage.mockResolvedValue({ durationMs: 9321 })
+    await test.create().alarm()
+    const status = await (await test.create().handle(request('status'))).json<Status>()
+    expect(status.linked).toBe(true)
+    expect(status.login).toBeUndefined()
+    expect(status.usage).toMatchObject([
+      { outcome: 'connected', completion: 'automatic', browserMs: 9321, timing: 'cloudflare', elapsedMs: 10000 },
+    ])
+    const reads = test.browser.readSession.mock.calls.length
+    await test.create().alarm()
+    expect(test.browser.readSession).toHaveBeenCalledTimes(reads)
+    expect(test.browser.launch).toHaveBeenCalledOnce()
+    // A simultaneous manual click is harmless after automatic completion.
+    expect((await controller.handle(request('login/finish', {}))).status).toBe(200)
+    expect(test.browser.close).toHaveBeenCalledOnce()
+  })
+
+  it('closes an unopened attempt without polling or consuming the full four minutes', async () => {
+    const test = setup()
+    await test.create().handle(request('login/start', { projectId }))
+    test.advance(LOGIN_OPEN_TIMEOUT_MS)
+    await test.create().alarm()
+    expect(test.browser.readSession).not.toHaveBeenCalled()
+    const body = await (await test.create().handle(request('status'))).json<Status>()
+    expect(body.usage).toMatchObject([{ outcome: 'not_opened', timing: 'estimated', elapsedMs: LOGIN_OPEN_TIMEOUT_MS }])
+  })
+
+  it('keeps an absolute deadline despite automatic checks and refreshed links', async () => {
+    const test = setup()
+    test.browser.readSession.mockResolvedValue(undefined)
+    const controller = test.create()
+    await controller.handle(request('login/start', { projectId }))
+    await controller.handle(request('login/watch', {}))
+    test.advance(LOGIN_TIMEOUT_MS - 1000)
+    await controller.alarm()
+    expect(test.setAlarm).toHaveBeenLastCalledWith(Date.UTC(2026, 10, 23, 12) + LOGIN_TIMEOUT_MS)
+    test.advance(1000)
+    await controller.alarm()
+    expect(test.browser.close).toHaveBeenCalledOnce()
+    const body = await (await controller.handle(request('status'))).json<Status>()
+    expect(body.usage[0]!.outcome).toBe('expired')
+  })
+
+  it('retries a failed manual completion close before expiry and retains its original outcome', async () => {
+    const test = setup()
+    const controller = test.create()
+    await controller.handle(request('login/start', { projectId }))
+    test.advance(10000)
+    test.browser.close.mockRejectedValueOnce(new Error('private provider message'))
+    expect(await (await controller.handle(request('login/finish', {}))).json()).toMatchObject({
+      code: 'LOGIN_CLOSE_PENDING',
+    })
+    let body = await (await controller.handle(request('status'))).json<Status>()
+    expect(body.login?.closing).toBe(true)
+    expect(body.linked).toBe(true)
+    expect(body.usage).toEqual([])
+    test.advance(LOGIN_CHECK_MS)
+    await test.create().alarm()
+    body = await (await controller.handle(request('status'))).json<Status>()
+    expect(body.login).toBeUndefined()
+    expect(body.usage).toMatchObject([{ outcome: 'connected', completion: 'manual', elapsedMs: 15000 }])
+    expect(test.browser.readSession).toHaveBeenCalledOnce()
+  })
+
+  it('records launch and navigation failures without inventing zero usage or exposing credentials', async () => {
+    const test = setup()
+    test.browser.launch.mockImplementationOnce(async () => {
+      test.advance(2000)
+      throw new Error('private cookie/token')
+    })
+    const controller = test.create()
+    expect((await controller.handle(request('login/start', { projectId }))).status).toBe(400)
+    let body = await (await controller.handle(request('status'))).json<Status>()
+    expect(body.usage).toMatchObject([{ outcome: 'launch_failed', elapsedMs: 2000, timing: 'unavailable' }])
+    expect(body.usage[0]!.browserMs).toBeUndefined()
+    test.browser.view.mockRejectedValueOnce(new Error('private cookie/token'))
+    expect((await controller.handle(request('login/start', { projectId }))).status).toBe(400)
+    body = await (await controller.handle(request('status'))).json<Status>()
+    expect(body.usage[0]!.outcome).toBe('failed')
+    expect(JSON.stringify(body)).not.toMatch(/private|sessionId|loginUrl/)
+    expect(JSON.stringify([...test.entries])).not.toMatch(/launch_failed|private|connected/)
+  })
+
+  it('closes and records a failed automatic check without launching another browser', async () => {
+    const test = setup()
+    const controller = test.create()
+    await controller.handle(request('login/start', { projectId }))
+    await controller.handle(request('login/watch', {}))
+    test.browser.readSession.mockRejectedValueOnce(new Error('private remote response'))
+    test.advance(LOGIN_CHECK_MS)
+    await controller.alarm()
+    const body = await (await controller.handle(request('status'))).json<Status>()
+    expect(body.usage[0]!.outcome).toBe('failed')
+    expect(test.entries.has('session')).toBe(false)
+    expect(test.browser.launch).toHaveBeenCalledOnce()
+  })
+
+  it('retains every usage record across months and exports beyond the twenty displayed entries', async () => {
+    const test = setup()
+    for (let i = 0; i < 24; i++) {
+      const controller = test.create()
+      expect((await controller.handle(request('login/start', { projectId }))).status).toBe(200)
+      test.advance(1000)
+      await controller.handle(request('login/cancel', {}))
+      test.advance(86400000)
+    }
+    const controller = test.create()
+    const status = await (await controller.handle(request('status'))).json<Status>()
+    expect(status.usage).toHaveLength(20)
+    const response = await controller.handle(request('login/history'))
+    expect(response.headers.get('Content-Disposition')).toContain('overleaf-login-usage.json')
+    const history = await response.json<{ sessions: LoginUsage[] }>()
+    expect(history.sessions).toHaveLength(24)
+    expect(new Set(history.sessions.map((item: { id: string }) => item.id)).size).toBe(24)
+    await controller.handle(request('unlink', {}))
+    expect(
+      (await (await controller.handle(request('login/history'))).json<{ sessions: LoginUsage[] }>()).sessions
+    ).toHaveLength(24)
+    expect(JSON.stringify(history)).not.toMatch(/private|sessionId|loginUrl|projectId/)
+  })
+
+  it('treats provider usage lookup failures as estimates and still closes promptly', async () => {
+    const test = setup()
+    const controller = test.create()
+    await controller.handle(request('login/start', { projectId }))
+    test.advance(2345)
+    test.browser.usage.mockRejectedValueOnce(new Error('history unavailable'))
+    await controller.handle(request('login/cancel', {}))
+    const status = await (await controller.handle(request('status'))).json<Status>()
+    expect(status.usage).toMatchObject([{ elapsedMs: 2345, timing: 'estimated', outcome: 'cancelled' }])
+    expect(status.login).toBeUndefined()
   })
 })
 

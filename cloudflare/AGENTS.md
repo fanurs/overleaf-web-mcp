@@ -8,7 +8,13 @@ The owner requires zero Cloudflare usage charges for this integration.
 - Use the existing Worker and SQLite-backed Durable Object. Browser Run on Workers Free is
   allowed only for the owner-authorized browser-only Overleaf login flow. Use a dedicated
   temporary browser, a four-minute absolute deadline, one-minute idle timeout, and explicit
-  closure after completion or cancellation. Never enable session recordings.
+  closure after completion or cancellation. Never enable session recordings. Close unopened
+  links after one minute, detect successful login automatically, and retain manual completion.
+  Polling can keep a browser active; never rely on provider idle timeout as the only cutoff.
+- Show elapsed time and persist a private duration/outcome record for every login attempt.
+  Distinguish provider-reported duration, estimates, and unavailable measurements. Never log
+  credentials, control URLs, browser IDs, or document content. Keep all records available for
+  authenticated export without enabling a paid logging service.
 - Keep at most two hosted login attempts per verified identity per UTC day. Cloudflare
   separately enforces its shared ten-minute daily Free browser allowance. Do not retry quota
   failures automatically. Do not introduce Containers, R2, AI services, paid plans, or paid fallbacks.

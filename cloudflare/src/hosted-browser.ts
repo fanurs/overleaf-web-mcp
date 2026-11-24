@@ -8,6 +8,7 @@ export interface HostedBrowser {
   view(sessionId: string): Promise<string>
   readSession(sessionId: string): Promise<CookieJar | undefined>
   close(sessionId: string): Promise<void>
+  usage(sessionId: string): Promise<{ durationMs: number } | undefined>
 }
 
 interface BrowserCookie {
@@ -59,24 +60,30 @@ export class CloudflareHostedBrowser implements HostedBrowser {
   constructor(private readonly binding: BrowserWorker) {}
 
   async launch(): Promise<string> {
-    const browser = await puppeteer.launch(this.binding, { keep_alive: 60000, recording: false })
-    try {
-      const page = (await browser.pages())[0] ?? (await browser.newPage())
-      await page.goto(`${OVERLEAF_ORIGIN}/login`, { waitUntil: 'domcontentloaded', timeout: 20000 })
-      return browser.sessionId()
-    } catch (error) {
-      await browser.close()
-      throw error
-    } finally {
-      await browser.disconnect()
-    }
+    // Return the ID before navigation so every later failure has a durable cleanup record.
+    return (await puppeteer.acquire(this.binding, { keep_alive: 60000, recording: false })).sessionId
+  }
+
+  async usage(sessionId: string): Promise<{ durationMs: number } | undefined> {
+    const record = (await puppeteer.history(this.binding)).find(item => item.sessionId === sessionId)
+    if (
+      record?.startTime === undefined ||
+      record.endTime === undefined ||
+      !Number.isFinite(record.startTime) ||
+      !Number.isFinite(record.endTime) ||
+      record.endTime < record.startTime
+    )
+      return
+    return { durationMs: record.endTime - record.startTime }
   }
 
   async view(sessionId: string): Promise<string> {
     const browser = await puppeteer.connect(this.binding, sessionId)
     try {
-      const page = (await browser.pages())[0]
-      if (!page) throw new Error('LOGIN_BROWSER_CLOSED')
+      const page = (await browser.pages())[0] ?? (await browser.newPage())
+      if (page.url() === 'about:blank') {
+        await page.goto(`${OVERLEAF_ORIGIN}/login`, { waitUntil: 'domcontentloaded', timeout: 20000 })
+      }
       const cdp = await page.createCDPSession()
       const { devtoolsFrontendUrl } = await cdp.send('Cloudflare.getLiveView', {
         mode: 'full',
