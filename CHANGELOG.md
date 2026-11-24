@@ -40,6 +40,15 @@ below. Before 1.0.0, a minor or patch release could change them, and each such c
   setup page. It reads only the selected test project's root document and reports success flags,
   a character count, and a protocol name. Remote MCP editing is not enabled by this probe.
 
+### Fixed
+
+- Browser helper 0.1.1 includes the exact root `overleaf.com` host permission needed by
+  Chromium's domain-cookie permission filter. It chooses the cookie store of the selected
+  open project tab and that project's exact URL instead of the popup's default store and a
+  generic path. Missing site access, missing project/store, an empty browser result, and
+  rejected formats have distinct safe errors. Existing installations must replace the
+  unpacked files and reload; no cookies are read automatically.
+
 ### Documentation
 
 - Explain how to select the Cloudflare deployment branch when the creation form starts from

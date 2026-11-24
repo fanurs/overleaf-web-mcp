@@ -16,7 +16,9 @@ editing work proceeds. Do not bypass an Overleaf security refusal.
    **Developer mode**, click **Load unpacked**, and select the extracted folder containing
    `manifest.json`. Browser extension installation must be done by the owner.
 3. The requested permissions are cookies and script execution for exactly
-   `https://www.overleaf.com/*` and `https://overleaf-mcp.fanurs.com/*`. Review and accept these
+   `https://overleaf.com/*`, `https://www.overleaf.com/*`, and
+   `https://overleaf-mcp.fanurs.com/*`. The root Overleaf domain is needed to read domain cookies
+   shared with www; no other Overleaf subdomain is permitted. Review and accept these
    only for your own copy of this helper. It has no Google or university-site permission.
 
 ## Connect
@@ -36,7 +38,8 @@ the saved Overleaf session expires. Your computer need not stay on for the hoste
 
 Cookies grant the service an Overleaf account session, not a project-scoped permission.
 The server currently reads only the selected project's root document and reports success flags.
-The helper reads cookies applicable to `https://www.overleaf.com/project`, filters to the
+The helper reads cookies applicable to the exact selected project URL from the cookie store belonging to that open
+project tab, filters to the
 exact `overleaf.com`/`www.overleaf.com` domains, and sends them as a Netscape cookie file to the
 existing authenticated `/api/link` route through the setup tab. It never exports a file, copies
 to the clipboard, displays a cookie value, logs it, or sends it to chat or GitHub. Google and
@@ -53,3 +56,20 @@ setup page for that. Revoking the account session at Overleaf is a separate acti
 Source APIs:
 https://developer.chrome.com/docs/extensions/reference/api/cookies
 https://developer.chrome.com/docs/extensions/reference/api/scripting
+
+## Update an existing installation to 0.1.1
+
+Download the current ZIP from https://overleaf-mcp.fanurs.com/connect/extension.zip and extract
+its files into the same folder used for **Load unpacked**, replacing the old helper files.
+Open `edge://extensions` or `chrome://extensions` and click **Reload** on the helper card.
+Accept/enable access to the listed Overleaf domains if the browser asks. Open the helper again
+and confirm it shows **Helper version 0.1.1** before clicking Connect.
+
+Version 0.1.0 omitted the root `overleaf.com` host permission. Chromium filters each cookie by
+its own domain, so an allowed www tab is not sufficient for a domain cookie in this API. The
+updated version also explicitly selects the open project's cookie store and exact URL, instead
+of assuming the popup's default store. It distinguishes withheld permission, a missing project
+tab/store, no returned cookies, and rejected formats without displaying names or values.
+
+Implementation reference for Chromium's cookie-domain permission filter:
+https://chromium.googlesource.com/chromium/src/+/7716401d9f3fe45aa9928105e2e6a0a288c059c1/chrome/browser/extensions/api/cookies/cookies_helpers.cc

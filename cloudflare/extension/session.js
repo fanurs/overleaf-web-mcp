@@ -1,5 +1,10 @@
 export function parseProject(value) {
-  const url = new URL(value)
+  let url
+  try {
+    url = new URL(value)
+  } catch {
+    throw new Error('PROJECT_INVALID')
+  }
   const match = /^\/project\/([a-f0-9]{24})\/?$/u.exec(url.pathname)
   if (url.origin !== 'https://www.overleaf.com' || url.username || url.password || !match) {
     throw new Error('PROJECT_INVALID')

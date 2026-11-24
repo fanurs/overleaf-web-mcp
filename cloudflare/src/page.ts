@@ -10,7 +10,8 @@ export const SETUP_HTML = `<!doctype html>
 <small>Paste the URL from your open Overleaf project. The connection test does not change its documents.</small>
 <h2>2. Connect your existing login (no timer)</h2>
 <p>The browser helper transfers your existing Overleaf session directly to this private service. It uses zero cloud-browser minutes. Install it once in Edge or Chrome, then click Connect inside the helper.</p>
-<a class="button primary" href="/connect/extension.zip" download="overleaf-connection-helper.zip">Download browser helper (ZIP)</a>
+<a class="button primary" href="/connect/extension.zip" download="overleaf-connection-helper.zip">Download browser helper 0.1.1 (ZIP)</a>
+<p>Already installed version 0.1.0? Replace the files in the same extracted folder with this ZIP, then click Reload on its extension card. The popup should show Helper version 0.1.1.</p>
 <ol><li>Extract the ZIP. Open <strong>edge://extensions</strong> or <strong>chrome://extensions</strong>, enable Developer mode, choose Load unpacked, and select the extracted folder containing manifest.json.</li><li>Keep this setup tab signed in. In the same browser window, open your signed-in Overleaf project and open Overleaf connection helper - Fanurs from the Extensions menu.</li><li>Check the project URL, then click Connect this Overleaf session. Return here and click Test connection when the helper says Session saved.</li></ol>
 <small>The helper needs cookie and script permissions for Overleaf and this private setup site only. It does not read your passwords or Google/university cookies, save cookies on disk, or send them to chat. Saved cookies grant an Overleaf account session. A successful transfer still needs the read-only connection test below.</small>
 <details><summary>Alternative - temporary cloud sign-in (60-second deadline)</summary>

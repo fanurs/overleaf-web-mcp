@@ -141,7 +141,10 @@ Use the same setup-page identity each time, because each identity has separate s
 The helper only acts on an explicit click. It reads Overleaf cookies and transfers them directly
 through the authenticated setup tab to the existing `/api/link` route. It adds no CORS exemption,
 new secret, cloud service, background process, or paid dependency. The helper has cookie/script
-permissions only for `www.overleaf.com` and `overleaf-mcp.fanurs.com`. It has no Google/university
+permissions only for `overleaf.com`, `www.overleaf.com`, and `overleaf-mcp.fanurs.com`.
+The root-domain permission covers Overleaf domain cookies; no wildcard subdomain permission
+is granted. Version 0.1.1 selects the actual project tab's cookie store and reports permission
+problems separately from an empty result. It has no Google/university
 site permissions, background script, analytics, or local cookie storage. The ZIP is reproducibly
 built from `cloudflare/extension/` and served behind Access at `/connect/extension.zip`.
 See [extension/README.md](extension/README.md) for the complete permission boundary.
