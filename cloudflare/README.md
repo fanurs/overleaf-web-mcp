@@ -95,16 +95,16 @@ Review its repository permissions before saving. Existing repository selections 
 
 Use these settings after the code is pushed:
 
-| Setting | Value |
-| --- | --- |
-| Worker name | `overleaf-mcp` |
-| Production branch | `release/1.3.0-cloudflare` |
-| Root directory | Repository root, not `cloudflare/` |
-| Build command | `npm run check:cloudflare && npm run test:cloudflare` |
-| Deploy command | `npm run deploy:cloudflare` |
-| Build variable | `NODE_VERSION=24` |
-| Preview builds | Disabled |
-| API token | Create a separate build token named `overleaf-mcp-deploy` |
+| Setting           | Value                                                     |
+| ----------------- | --------------------------------------------------------- |
+| Worker name       | `overleaf-mcp`                                            |
+| Production branch | `release/1.3.0-cloudflare`                                |
+| Root directory    | Repository root, not `cloudflare/`                        |
+| Build command     | `npm run check:cloudflare && npm run test:cloudflare`     |
+| Deploy command    | `npm run deploy:cloudflare`                               |
+| Build variable    | `NODE_VERSION=24`                                         |
+| Preview builds    | Disabled                                                  |
+| API token         | Create a separate build token named `overleaf-mcp-deploy` |
 
 Cloudflare's automatic token can edit Workers, KV/R2 storage, and Worker routes across the
 account. Review that permission before creating it. The token is stored by Cloudflare; do not
@@ -125,11 +125,11 @@ There is no need to copy Cloudflare's build token into chat or into GitHub secre
 
 In the Worker, open **Settings > Variables and Secrets**. These are runtime settings, not build settings.
 
-| Name | Type | Value |
-| --- | --- | --- |
-| `CF_ACCESS_TEAM_DOMAIN` | Text | The existing team domain ending in `.cloudflareaccess.com`, as used by PDF Reader |
-| `CF_ACCESS_AUD` | Text | The new Overleaf Access application's audience tag |
-| `SESSION_ENCRYPTION_KEY` | Secret | A new 64-character hexadecimal value generated on your own computer |
+| Name                     | Type   | Value                                                                             |
+| ------------------------ | ------ | --------------------------------------------------------------------------------- |
+| `CF_ACCESS_TEAM_DOMAIN`  | Text   | The existing team domain ending in `.cloudflareaccess.com`, as used by PDF Reader |
+| `CF_ACCESS_AUD`          | Text   | The new Overleaf Access application's audience tag                                |
+| `SESSION_ENCRYPTION_KEY` | Secret | A new 64-character hexadecimal value generated on your own computer               |
 
 To generate the secret on a computer with Node.js, run this command, then paste its output only
 into Cloudflare's secret field:
@@ -242,12 +242,21 @@ Removing an Overleaf session does not erase this usage history. Earlier attempts
 reconstructed and are explicitly excluded. Different setup identities have separate logs;
 Cloudflare's ten-minute allowance remains shared across the full Cloudflare account.
 
-#### Verified checkpoint and remaining uncertainty
+#### Verified connection and editing checkpoint
 
 On November 23, 2026, a short dashboard-created Browser Run session reached the normal
 Overleaf login page with recording off. The session was explicitly closed and the dashboard
-confirmed no active sessions. That proves the login page is reachable, not that a particular
-university/Google login or the later authenticated protocol probe succeeds. A successful owner session transfer or hosted sign-in and live read test are still required. Do not bypass a provider security refusal or solve it by upgrading plans.
+confirmed no active sessions. The owner subsequently transferred an existing session with
+helper 0.1.1. The live read test authenticated, joined the selected project, and read an
+editable document through ShareJS without requiring a configured compile root. The
+proposal was not modified.
+
+The deployed remote adapter then passed a disposable editing test on November 23, 2026.
+It created a temporary project, read its document, applied and verified a revision-checked
+write, refused a stale revision, compiled successfully, and moved the project to Trash.
+The recorded workflow took 2.38 seconds and used **0 Browser Run seconds**. This verifies
+the live Overleaf engine through the setup service, not the separate ChatGPT OAuth path.
+Do not bypass a provider security refusal or solve it by upgrading plans.
 
 The `BROWSER` binding is deployed from `wrangler.jsonc`; it requires no separately stored
 Cloudflare API token. The code uses the official `@cloudflare/puppeteer` package, pinned to
@@ -263,7 +272,8 @@ References for this flow:
 ## ChatGPT connection
 
 After the disposable editing test passes, configure **Managed OAuth** on the existing
-Overleaf Access application, under its advanced settings. Preserve the owner-only policy,
+Overleaf Access application, under **Additional settings** (called Advanced settings in
+Cloudflare's documentation). Preserve the owner-only policy,
 application audience and domains. Restrict registered redirect URIs to the actual ChatGPT
 callback; do not allow arbitrary localhost, loopback or unrelated clients. Use the same
 setup identity for OAuth so the verified subject maps to the existing saved session.
@@ -278,6 +288,12 @@ Connect `https://overleaf-mcp.fanurs.com/mcp` to ChatGPT with OAuth. Verify `con
 and a read before claiming the plugin works. The setup and real editing test are separate
 from the ChatGPT authorization and tool-discovery checks. Repeat the helper transfer only
 when Overleaf expires or revokes its session; no hosted browser is needed for normal use.
+
+As of November 23, 2026, the private personal plugin package has been created at version
+0.2.0 from `plugin/overleaf-private/`. The live editing test passed, but Managed OAuth
+configuration, the owner's ChatGPT authorization, and a real ChatGPT tool call remain
+pending. The plugin is not yet a verified working connection in ChatGPT. No OAuth setting
+has been saved as part of this checkpoint.
 
 Managed OAuth reference:
 <https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/>.
