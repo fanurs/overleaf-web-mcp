@@ -274,8 +274,9 @@ References for this flow:
 After the disposable editing test passes, configure **Managed OAuth** on the existing
 Overleaf Access application, under **Additional settings** (called Advanced settings in
 Cloudflare's documentation). Preserve the owner-only policy,
-application audience and domains. Restrict registered redirect URIs to the actual ChatGPT
-callback; do not allow arbitrary localhost, loopback or unrelated clients. Use the same
+application audience and domains. Restrict registered redirect URIs to ChatGPT's OAuth
+callback paths during setup, then the actual callback shown by the web connection; do not
+allow arbitrary localhost, loopback or unrelated clients. Use the same
 setup identity for OAuth so the verified subject maps to the existing saved session.
 
 Cloudflare handles OAuth discovery, authorization, refresh and the exchange to the origin's
@@ -289,14 +290,59 @@ and a read before claiming the plugin works. The setup and real editing test are
 from the ChatGPT authorization and tool-discovery checks. Repeat the helper transfer only
 when Overleaf expires or revokes its session; no hosted browser is needed for normal use.
 
-As of November 23, 2026, the private personal plugin package has been created at version
-0.2.0 from `plugin/overleaf-private/`. The live editing test passed, but Managed OAuth
-configuration, the owner's ChatGPT authorization, and a real ChatGPT tool call remain
-pending. The plugin is not yet a verified working connection in ChatGPT. No OAuth setting
-has been saved as part of this checkpoint.
+The private personal package was created at version 0.2.0 from
+`plugin/overleaf-private/` on November 23, 2026. Its listing subsequently offered
+"Open in desktop app". Saving a package containing a remote MCP configuration does not
+establish the separate ChatGPT web connection. Use the web registration flow below;
+the package listing is not evidence that ChatGPT can discover or call its tools.
+
+On November 25, 2026, the owner approved Managed OAuth and the settings were saved and
+read back from the existing Access application:
+
+- Managed OAuth enabled, with localhost and loopback clients disabled.
+- Allowed redirects during registration are
+  `https://chatgpt.com/connector_platform_oauth_redirect` and
+  `https://chatgpt.com/connector/oauth/*`. Once ChatGPT shows its exact redirect URI,
+  narrow this list to that URI. The wildcard covers only the ChatGPT callback path,
+  not arbitrary origins or other paths on ChatGPT.
+- Access token lifetime is 15 minutes; refresh grant lifetime is one week. These are
+  authorization lifetimes, not limits on paper-writing time or hosted browser usage.
+- The existing owner-only email policy, Google identity provider, application audience,
+  domain, and 24-hour browser session duration were preserved. Workers Free was verified
+  again. No paid service or billing change was introduced.
+
+Public read-only checks verified both resource metadata and authorization-server discovery,
+including DCR and PKCE S256. An unauthenticated MCP initialization using curl returned
+401 with the expected `WWW-Authenticate` resource-metadata URL. The generic Python
+urllib client received Cloudflare error 1010 for its browser signature; this is a separate
+edge restriction, and does not establish whether the actual ChatGPT client is allowed.
+Do not disable global security protections to hide that distinction. ChatGPT's own
+authorization, tool discovery, and a real tool read remain unverified.
+
+### Register in ChatGPT web
+
+1. Open <https://chatgpt.com/plugins> and choose **Add > Add custom MCP server**.
+2. Name it **Overleaf Web** to distinguish it from the existing package listing. Set
+   **Server URL** to `https://overleaf-mcp.fanurs.com/mcp` and **Authentication** to OAuth.
+3. Leave client ID and client secret empty. If a registration method is requested, choose
+   **Dynamic Client Registration (DCR)**. The server advertises DCR, not CIMD.
+4. Review the risk notice and choose **Create as a plugin**. Complete sign-in using the
+   same Google/Access identity that owns the saved setup session. This can differ from
+   the email used for Overleaf itself.
+5. Install/connect the resulting web plugin. Copy its exact OAuth redirect URI into the
+   Access allowlist, replacing the registration-time callback patterns.
+6. Invoke `connection_status` and read the linked project through ChatGPT. Only then
+   claim that the web connection works. Keep proposal edits out of connection testing.
+
+This registration and OAuth flow starts no hosted Overleaf browser. The setup work and
+public authorization checks on November 25 used **0 Browser Run seconds**.
 
 Managed OAuth reference:
 <https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/>.
+
+ChatGPT web connection and callback references:
+<https://developers.openai.com/plugins/deploy/connect-chatgpt> and
+<https://developers.openai.com/plugins/build/auth>.
 
 ## Developer checks
 
