@@ -1,4 +1,4 @@
-# Cloudflare connection test
+# Private Cloudflare Overleaf MCP
 
 This is Fanurs' private Cloudflare adapter for ChatGPT. The authenticated endpoint is
 `https://overleaf-mcp.fanurs.com/mcp`, using Streamable HTTP behind Cloudflare Access.
@@ -38,7 +38,7 @@ API key, or session file needs to be sent to the assistant or put in GitHub.
 
 The setup reuses the account and Google identity provider already used by PDF Reader.
 Keep Workers and Zero Trust on their existing Free plans. The deploy uses a SQLite Durable
-Object and a Browser Run binding on Workers Free, with no Containers, R2 bucket, or paid plan.
+Object on Workers Free, with no browser binding, Containers, R2 bucket, or paid plan.
 
 ### Free-only billing requirement
 
@@ -52,8 +52,8 @@ These account-level limits are shared with the account's other projects. Reachin
 make the service unavailable until the limits reset. This is the intended behavior.
 
 Do not upgrade the account to fix a failed build, CPU limit, or quota error. Do not enable
-paid services or add usage-billed dependencies. The code deploys a Worker, a SQLite
-Durable Object, and a Browser Run binding on the Free plan. It has no billing-subscription setup step. A later account-wide upgrade would
+paid services or add usage-billed dependencies. The code deploys a Worker and a SQLite
+Durable Object on the Free plan. It has no billing-subscription setup step. A later account-wide upgrade would
 change the billing behavior for this project too; the application cannot prevent an account
 administrator from changing the subscription. Paid-plan spending alerts or caps are not a
 replacement for staying on Free.
@@ -173,74 +173,37 @@ required. If Overleaf refuses the session, report the error without bypassing th
 The extension can be removed after a successful transfer and reinstalled if renewal is needed.
 The owner's computer does not need to stay on for the hosted service after transfer.
 
-A session is an account login, not an Overleaf-issued project-scoped permission. This probe
-restricts its read to the selected project; a future MCP adapter must enforce its allowlist.
-**Remove saved session** deletes the active stored credentials and cancels any pending login.
+A session is an account login, not an Overleaf-issued project-scoped permission. The remote adapter
+enforces the selected-project allowlist for every operation.
+**Remove saved session** deletes the active stored credentials and retains the old usage history.
 Revoking the login at Overleaf is a separate action.
 
-#### Optional hosted sign-in
+#### Retired hosted sign-in and preserved history
 
-This remains available under **Alternative - temporary cloud sign-in** on the setup page.
+The owner retired timed Cloudflare browser login on November 25, 2026 after the helper and
+actual ChatGPT connection worked. Before retirement, the Cloudflare Live Sessions dashboard
+confirmed **no active browser sessions**, and the setup page had no pending login. This change
+starts no cloud browser and uses **0 Browser Run seconds**.
 
-1. Paste the project URL and click **Prepare cloud sign-in (no timer)**. This opens a separate
-   preparation page without allocating a browser. The owner can leave it open indefinitely.
-2. Only when ready, the owner clicks **Start 60-second sign-in** on that visible, focused page.
-   An assistant must never click this button for the owner. The same tab becomes Live View.
-   Startup is cancelled if the page loses focus or is hidden before the handoff completes.
-3. Sign into Overleaf in the temporary browser. The service detects successful login, saves
-   only Overleaf cookies encrypted, and closes the cloud browser. **Finish connecting** and
-   **Cancel sign-in** remain available on the setup page along with the time log.
-4. Return to setup and click **Test connection**. Success reports `authenticated`,
-   `projectJoined`, and `documentRead` as true, a character count, and a protocol name.
-   No document text is returned and no document is changed.
+The deployment configuration no longer grants a `BROWSER` binding. The browser-launch code,
+Puppeteer dependency, preparation page, timers, and launch/completion controls are removed.
+Authenticated requests to `/connect/login`, `/login.js`, and `/api/login/*` return HTTP 410
+with `HOSTED_LOGIN_RETIRED`, except for the retained GET history export. Old open tabs therefore
+cannot launch another browser. A leftover Durable Object alarm is cleared without polling.
+No account-wide Browser Run setting or other application's binding is changed.
 
-The sixty-second deadline includes startup. Once Live View opens, switching away does not
-pause Cloudflare usage; the service cannot monitor attention inside that separate site.
-No automatic attempt or retry is launched. Preparation pages and refreshes do not start timers.
-The server refuses the old launch-request shape so a stale setup page cannot start the old flow.
+Existing saved Overleaf sessions, verification flags, encryption settings, OAuth and the
+selected-project restriction are unchanged. The browser helper is the connection method;
+a pre-existing session-file upload remains an advanced option. Neither needs a timed browser.
+After a new helper transfer, run the read and disposable editing checks again. A working
+ChatGPT plugin does not need to be recreated.
 
-#### Free limits and cleanup
-
-Browser Run is used only by the optional hosted sign-in, never the helper transfer or normal
-reads. Workers Free permits ten browser minutes per day shared across the account. This service
-also limits each verified identity to two launches per UTC day, including failed launches.
-
-The Durable Object requests shutdown at 60 seconds from the launch request, including startup.
-A handoff that has not completed closes after 20 seconds without repeated login checks. Opened
-logins are checked every five seconds, closing immediately after successful detection. The
-one-minute provider inactivity timeout remains, but active checks or Live View can keep it alive;
-the server deadline is the primary control. Cleanup and close intent persist across restarts.
-Failures retry closure, never browser creation. Old four-minute pending records are tightened to
-sixty seconds while preserving their original start time for the log.
-
-Network/provider calls and alarm delivery can delay confirmed shutdown beyond the deadline.
-The UI and logs do not claim a guaranteed exactly sixty-second billing maximum. The account's
-Free plan is the billing guard; the application limits reduce usage. Do not upgrade to resolve
-quota errors. The user is never asked to watch an allocated browser while waiting for an agent.
-
-The Live View URL grants temporary control and is only delivered to the authenticated owner.
-It is never logged, committed, or pasted into chat. URLs are restricted to HTTPS
-`live.browser.run/ui/`, expire for new connections after one minute, and become unusable when
-the browser closes. Session recording is not requested. The service does not store passwords,
-identity-provider cookies, page HTML, or screenshots.
-
-#### Per-attempt time log
-
-The setup page shows a running elapsed-time estimate during login and a time/result record
-for every attempt started with this version, including cancelled, expired, unopened, and failed
-attempts. Provider-reported `endTime - startTime` is used when Cloudflare session history is
-available at closure. Otherwise a clearly labeled estimate spans the start request through
-confirmed closure. A rejected launch is marked `unavailable`, with request elapsed time but
-no invented zero browser usage. These are operational measurements, not invoice guarantees.
-
-The most recent 20 records are displayed. **Download complete time log (JSON)** exports every
-record via the authenticated `/api/login/history` endpoint. Records are retained in encrypted
-monthly batches in the existing owner-isolated Durable Object; no paid logging service or
-recording is enabled. They contain timestamps, durations, an unrelated random record ID, and
-outcome only. No browser-session ID, control URL, credentials, or document content is logged.
-Removing an Overleaf session does not erase this usage history. Earlier attempts cannot be
-reconstructed and are explicitly excluded. Different setup identities have separate logs;
-Cloudflare's ten-minute allowance remains shared across the full Cloudflare account.
+The setup page labels its retained records **Past cloud-browser usage**, showing the latest
+20 attempts. GET `/api/login/history` still exports every recorded attempt for the authenticated
+setup identity. It reads the original encrypted `usage-months` and `usage:YYYY-MM` records
+without rewriting them or requiring a browser binding. Reported duration, estimated elapsed
+time and unavailable measurements keep their original meanings. Removing the saved Overleaf
+session does not remove this history. No earlier unrecorded usage can be reconstructed.
 
 #### Verified connection and editing checkpoint
 
@@ -257,17 +220,6 @@ write, refused a stale revision, compiled successfully, and moved the project to
 The recorded workflow took 2.38 seconds and used **0 Browser Run seconds**. This verifies
 the live Overleaf engine through the setup service, not the separate ChatGPT OAuth path.
 Do not bypass a provider security refusal or solve it by upgrading plans.
-
-The `BROWSER` binding is deployed from `wrangler.jsonc`; it requires no separately stored
-Cloudflare API token. The code uses the official `@cloudflare/puppeteer` package, pinned to
-2.0.1. No new Overleaf API routes are introduced: the flow navigates the ordinary login page
-and uses the existing upstream authenticated-project-page signal.
-
-References for this flow:
-<https://developers.cloudflare.com/browser-run/features/live-view/>,
-<https://developers.cloudflare.com/browser-run/features/human-in-the-loop/>,
-<https://developers.cloudflare.com/browser-run/puppeteer/>, and
-<https://developers.cloudflare.com/browser-run/limits/>.
 
 ## ChatGPT connection
 
@@ -350,7 +302,8 @@ the owner chooses to remove it; it is not needed for the working web connection.
    claim that the web connection works. Keep proposal edits out of connection testing.
 
 This registration and OAuth flow starts no hosted Overleaf browser. The setup work and
-public authorization checks on November 25 used **0 Browser Run seconds**.
+public authorization checks on November 25 used **0 Browser Run seconds**. The browser login
+alternative has since been retired; the helper remains supported.
 
 Managed OAuth reference:
 <https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/>.

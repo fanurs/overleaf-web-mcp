@@ -83,10 +83,19 @@ try {
   const page = await request('/connect', ownerA)
   assert.equal(page.status, 200)
   assert.match(page.headers.get('content-security-policy'), /frame-ancestors 'none'/u)
-  assert.match(await page.text(), /Overleaf connection test/u)
+  assert.match(await page.text(), /Overleaf connection/u)
   assert.match(await (await request('/setup.js', ownerA)).text(), /api\/status/u)
-  assert.match(await (await request('/connect/login', ownerA)).text(), /No timer has started/u)
-  assert.match(await (await request('/login.js', ownerA)).text(), /visibilityState/u)
+  for (const path of ['/connect/login', '/login.js']) {
+    assert.equal((await request(path)).status, 401)
+    assert.equal((await json(path, ownerA, undefined, 410)).code, 'HOSTED_LOGIN_RETIRED')
+  }
+  for (const action of ['start', 'watch', 'finish', 'cancel']) {
+    assert.equal((await json(`/api/login/${action}`, ownerA, {}, 410)).code, 'HOSTED_LOGIN_RETIRED')
+  }
+  const retired = await json('/api/status', ownerA)
+  assert.equal(retired.hostedLogin, false)
+  assert.deepEqual(retired.usage, [])
+  assert.deepEqual(await json('/api/login/history', ownerA), { sessions: [] })
   assert.equal((await request('/connect/extension.zip')).status, 401)
   const helper = await request('/connect/extension.zip', ownerA)
   assert.equal(helper.headers.get('content-type'), 'application/zip')

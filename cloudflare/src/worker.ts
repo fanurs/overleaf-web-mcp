@@ -2,16 +2,13 @@ import { DurableObject } from 'cloudflare:workers'
 
 import { verifyAccess, type AccessConfig } from './auth.js'
 import { json, validSetupRequest } from './http.js'
-import { CloudflareHostedBrowser } from './hosted-browser.js'
 import { SETUP_HTML, SETUP_JS } from './page.js'
-import { LOGIN_HTML, LOGIN_JS } from './login-page.js'
 import { EXTENSION_ZIP } from './extension-package.js'
 import { SessionController } from './session.js'
 
 interface Env extends AccessConfig {
   SESSION_ENCRYPTION_KEY: string
   SESSIONS: DurableObjectNamespace<OverleafSession>
-  BROWSER?: Fetcher
 }
 
 export class OverleafSession extends DurableObject<Env> {
@@ -19,15 +16,7 @@ export class OverleafSession extends DurableObject<Env> {
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
-    this.#controller = new SessionController(
-      ctx.storage,
-      env.SESSION_ENCRYPTION_KEY,
-      ctx.id.toString(),
-      undefined,
-      env.BROWSER
-        ? { browser: new CloudflareHostedBrowser(env.BROWSER), setAlarm: time => ctx.storage.setAlarm(time) }
-        : undefined
-    )
+    this.#controller = new SessionController(ctx.storage, env.SESSION_ENCRYPTION_KEY, ctx.id.toString())
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -35,7 +24,8 @@ export class OverleafSession extends DurableObject<Env> {
   }
 
   async alarm(): Promise<void> {
-    await this.#controller.alarm()
+    // A queued alarm from the retired login flow must not restart polling.
+    await this.ctx.storage.deleteAlarm()
   }
 }
 
@@ -74,11 +64,8 @@ export default {
     if (request.method === 'GET' && url.pathname === '/setup.js') {
       return new Response(SETUP_JS, { headers: { ...pageHeaders, 'Content-Type': 'text/javascript; charset=utf-8' } })
     }
-    if (request.method === 'GET' && url.pathname === '/connect/login') {
-      return new Response(LOGIN_HTML, { headers: { ...pageHeaders, 'Content-Type': 'text/html; charset=utf-8' } })
-    }
-    if (request.method === 'GET' && url.pathname === '/login.js') {
-      return new Response(LOGIN_JS, { headers: { ...pageHeaders, 'Content-Type': 'text/javascript; charset=utf-8' } })
+    if (url.pathname === '/connect/login' || url.pathname === '/login.js') {
+      return json({ code: 'HOSTED_LOGIN_RETIRED', setupUrl: 'https://overleaf-mcp.fanurs.com/connect' }, 410)
     }
     if (request.method === 'GET' && url.pathname === '/connect/extension.zip') {
       const bytes = Uint8Array.from(atob(EXTENSION_ZIP), character => character.charCodeAt(0))

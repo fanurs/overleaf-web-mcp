@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { importSession, mergeCookies } from '../src/cookies.js'
-import type { EncryptedSession } from '../src/crypto.js'
+import { encryptSession, type EncryptedSession } from '../src/crypto.js'
+import type { LoginUsage } from '../src/login-history.js'
 import type { runProbe } from '../src/probe.js'
 import { SessionController, type SessionStorage } from '../src/session.js'
 
@@ -111,5 +112,71 @@ describe('cookie scope', () => {
     await expect(importSession('.example.com\tTRUE\t/\tTRUE\t4102444800\tother\tfixture\n')).rejects.toThrow(
       'SESSION_EMPTY'
     )
+  })
+})
+
+describe('retired cloud-browser login', () => {
+  it('preserves old encrypted history and the verified session without a browser dependency', async () => {
+    const storage = memoryStorage()
+    const secret = 'ab'.repeat(32)
+    const owner = 'owner-a'
+    const write = async (key: string, value: unknown) =>
+      await storage.put(key, await encryptSession(JSON.stringify(value), secret, owner))
+    const october: LoginUsage[] = [
+      { id: 'old', startedAt: 1, endedAt: 2, elapsedMs: 1, timing: 'estimated', outcome: 'cancelled' },
+    ]
+    const november: LoginUsage[] = Array.from({ length: 22 }, (_, i) => ({
+      id: 'fixture-' + i,
+      startedAt: 10 + i,
+      endedAt: 11 + i,
+      elapsedMs: 1,
+      timing: 'cloudflare',
+      browserMs: 1,
+      outcome: 'connected',
+      completion: 'automatic',
+    }))
+    await write('usage-months', ['2026-10', '2026-11'])
+    await write('usage:2026-10', october)
+    await write('usage:2026-11', november)
+    await write('session', {
+      jar: JSON.stringify(await (await importSession(fixture)).serialize()),
+      projectId,
+      verifiedAt: 1,
+      editTest: { status: 'passed' },
+    })
+    const saved = await storage.get('session')
+    const oldHistory = await storage.get('usage:2026-11')
+    const controller = new SessionController(storage, secret, owner)
+    const status = (await (await controller.handle(request('status'))).json()) as { usage: LoginUsage[] }
+    expect(status).toMatchObject({
+      linked: true,
+      projectId,
+      verifiedAt: 1,
+      editTest: { status: 'passed' },
+      hostedLogin: false,
+    })
+    expect(status.usage).toEqual([...november].reverse().slice(0, 20))
+    expect(status).not.toHaveProperty('login')
+    for (const action of ['start', 'watch', 'finish', 'cancel']) {
+      for (const body of [undefined, { ready: true, projectId }]) {
+        const response = await controller.handle(request('login/' + action, body))
+        expect(response.status).toBe(410)
+        expect(await response.json()).toEqual({ code: 'HOSTED_LOGIN_RETIRED' })
+      }
+    }
+    expect(await storage.get('session')).toEqual(saved)
+    expect(await storage.get('usage:2026-11')).toEqual(oldHistory)
+    const exported = await controller.handle(request('login/history'))
+    expect(exported.headers.get('Content-Disposition')).toContain('overleaf-login-usage.json')
+    expect(await exported.json()).toEqual({ sessions: [...november].reverse().concat(october) })
+    await controller.handle(request('unlink', {}))
+    const restored = new SessionController(storage, secret, owner)
+    expect(await (await restored.handle(request('login/history'))).json()).toEqual({
+      sessions: [...november].reverse().concat(october),
+    })
+    const otherOwner = new SessionController(storage, secret, 'owner-b')
+    const denied = await otherOwner.handle(request('login/history'))
+    expect(denied.status).toBe(400)
+    expect(await denied.json()).toMatchObject({ code: 'HISTORY_UNAVAILABLE' })
   })
 })

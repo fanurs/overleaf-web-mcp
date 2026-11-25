@@ -9,7 +9,6 @@
   "keep_vars": true,
   "routes": [{ "pattern": "overleaf-mcp.fanurs.com", "custom_domain": true }],
   "observability": { "enabled": false },
-  "browser": { "binding": "BROWSER" },
   "durable_objects": {
     "bindings": [{ "name": "SESSIONS", "class_name": "OverleafSession" }]
   },

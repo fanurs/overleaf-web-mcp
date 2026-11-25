@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Overleaf connection helper - Fanurs",
-  "version": "0.1.1",
-  "description": "Transfer your Overleaf login to your private Overleaf connection test only when you click Connect.",
+  "version": "0.1.2",
+  "description": "Transfer your Overleaf login to your private Overleaf service only when you click Connect.",
   "permissions": ["cookies", "scripting"],
   "host_permissions": ["https://overleaf.com/*", "https://www.overleaf.com/*", "https://overleaf-mcp.fanurs.com/*"],
   "action": { "default_title": "Connect Overleaf", "default_popup": "popup.html" },

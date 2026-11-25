@@ -28,29 +28,19 @@ function page(initial: object, probeResult?: object) {
     if (!nodes.has(id)) nodes.set(id, new Element())
     return nodes.get(id)!
   }
-  let status = initial
-  let now = 0
+  const status = initial
   const timers: Array<() => Promise<void>> = []
   const clocks: Array<() => void> = []
-  const fetch = vi.fn(async (path: string, options: { body?: string }) => {
+  const fetch = vi.fn(async (path: string) => {
     if (path === '/api/status') return Response.json(status)
     if (path === '/api/probe') return Response.json(probeResult)
-    if (path === '/api/login/start') {
-      expect(JSON.parse(options.body!)).toEqual({ projectId: 'a'.repeat(24) })
-      status = { linked: false, usage: [], login: { elapsedMs: 2500, expiresAt: Date.now() + 237500, watching: false } }
-      return Response.json({
-        loginUrl: 'https://live.browser.run/ui/view?private-fixture',
-        expiresAt: Date.now() + 237500,
-      })
-    }
-    return Response.json({ watching: true })
+    throw new Error('Unexpected request: ' + path)
   })
   const context = createContext({
     document: { querySelector: node, querySelectorAll: () => [], createElement: () => new Element() },
     window: { open: vi.fn(), addEventListener: vi.fn() },
     URL,
     Date,
-    performance: { now: () => now },
     fetch,
     setTimeout: (fn: () => Promise<void>) => {
       timers.push(fn)
@@ -69,57 +59,25 @@ function page(initial: object, probeResult?: object) {
     fetch,
     timers,
     clocks,
-    setStatus: (value: object) => {
-      status = value
-    },
-    advance: (ms: number) => {
-      now += ms
-    },
   }
 }
 
-describe('browser-only setup page', () => {
-  it('opens preparation without allocating a browser or starting a timer and keeps manual completion', async () => {
-    const test = page({ linked: false, usage: [] })
-    await vi.waitFor(() => expect(test.node('#result').textContent).toContain('not connected'))
-    test.node('#project').value = 'https://www.overleaf.com/project/' + 'a'.repeat(24)
-    await test.node('#start').onclick!()
-    expect(test.fetch.mock.calls.map(call => call[0])).toEqual(['/api/status', '/api/status'])
-    expect(test.clocks).toHaveLength(0)
-    expect(test.node('#result').textContent).toContain('No cloud browser starts')
-    expect(SETUP_HTML).toContain('id="finish">Finish connecting')
-    expect(SETUP_HTML).toContain('60 seconds total')
-    expect(SETUP_HTML).not.toContain('four minutes')
-  })
-
-  it('restores a running timer from server elapsed time and removes the credential link on automatic closure', async () => {
+describe('helper-only setup page', () => {
+  it('ignores legacy pending login state without polling, timers or launch controls', async () => {
     const test = page({
-      linked: false,
+      linked: true,
       usage: [],
       login: { elapsedMs: 10000, expiresAt: Date.now() + 100000, watching: true },
     })
-    await vi.waitFor(() => expect(test.clocks).toHaveLength(1))
-    test.advance(2200)
-    test.clocks[0]!()
-    expect(test.node('#elapsed').textContent).toContain('12.2 s')
-    test.setStatus({
-      linked: true,
-      usage: [
-        {
-          startedAt: Date.now(),
-          browserMs: 12000,
-          elapsedMs: 12800,
-          timing: 'cloudflare',
-          outcome: 'connected',
-          completion: 'automatic',
-        },
-      ],
-    })
-    await vi.waitFor(() => expect(test.timers.length).toBeGreaterThan(0))
-    await test.timers.at(-1)!()
-    expect(test.node('#login-panel').hidden).toBe(true)
-    expect(test.node('#usage-summary').textContent).toContain('12.0 s reported by Cloudflare')
-    expect(test.node('#result').textContent).toContain('Click Test connection')
+    await vi.waitFor(() => expect(test.node('#result').textContent).toContain('Overleaf session saved'))
+    expect(test.fetch.mock.calls.map(call => call[0])).toEqual(['/api/status', '/api/status'])
+    expect(test.clocks).toHaveLength(0)
+    expect(test.timers).toHaveLength(0)
+    expect(SETUP_HTML).toContain('can no longer launch cloud browsers')
+    expect(SETUP_HTML).toContain('Download complete time log')
+    expect(SETUP_HTML).not.toContain('id="start"')
+    expect(SETUP_HTML).not.toContain('id="finish"')
+    expect(SETUP_HTML).not.toContain('/connect/login')
   })
 
   it('shows a saved helper session instead of an old expired cloud attempt', async () => {

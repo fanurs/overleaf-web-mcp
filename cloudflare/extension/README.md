@@ -5,9 +5,9 @@ service at https://overleaf-mcp.fanurs.com. It starts no Cloudflare browser and 
 server. It has no background worker, timers, telemetry, automatic transfer, or local storage.
 Transfer happens only after you click **Connect this Overleaf session** in its popup.
 
-This is still an experimental connection test. Saving cookies does not prove Overleaf will
-accept them from Cloudflare. The read-only **Test connection** step must succeed before MCP
-editing work proceeds. Do not bypass an Overleaf security refusal.
+Saving cookies does not prove Overleaf will accept them from Cloudflare. After a new transfer,
+run **Test connection**, then **Run disposable editing test** on the setup page. Once those
+succeed, use the existing ChatGPT web plugin; it does not need to be recreated. Do not bypass an Overleaf security refusal.
 
 ## Install once
 
@@ -37,7 +37,7 @@ the saved Overleaf session expires. Your computer need not stay on for the hoste
 ## Credential boundary
 
 Cookies grant the service an Overleaf account session, not a project-scoped permission.
-The server currently reads only the selected project's root document and reports success flags.
+The MCP server enforces the selected-project allowlist for reads, edits and compilation.
 The helper reads cookies applicable to the exact selected project URL from the cookie store belonging to that open
 project tab, filters to the
 exact `overleaf.com`/`www.overleaf.com` domains, and sends them as a Netscape cookie file to the
@@ -57,13 +57,13 @@ Source APIs:
 https://developer.chrome.com/docs/extensions/reference/api/cookies
 https://developer.chrome.com/docs/extensions/reference/api/scripting
 
-## Update an existing installation to 0.1.1
+## Update an older 0.1.0 installation
 
 Download the current ZIP from https://overleaf-mcp.fanurs.com/connect/extension.zip and extract
 its files into the same folder used for **Load unpacked**, replacing the old helper files.
 Open `edge://extensions` or `chrome://extensions` and click **Reload** on the helper card.
 Accept/enable access to the listed Overleaf domains if the browser asks. Open the helper again
-and confirm it shows **Helper version 0.1.1** before clicking Connect.
+and confirm it shows **Helper version 0.1.1** or newer before clicking Connect.
 
 Version 0.1.0 omitted the root `overleaf.com` host permission. Chromium filters each cookie by
 its own domain, so an allowed www tab is not sufficient for a domain cookie in this API. The
@@ -73,3 +73,11 @@ tab/store, no returned cookies, and rejected formats without displaying names or
 
 Implementation reference for Chromium's cookie-domain permission filter:
 https://chromium.googlesource.com/chromium/src/+/7716401d9f3fe45aa9928105e2e6a0a288c059c1/chrome/browser/extensions/api/cookies/cookies_helpers.cc
+
+## Version 0.1.2
+
+Text-only update after retiring the optional hosted browser login. Existing 0.1.1 installations
+continue to work; no reinstall or new permissions are needed. The helper popup no longer says
+the editing MCP is unavailable. Keep the extracted folder while using an unpacked installation.
+The helper can be disabled between transfers. Developer mode may be required to run it again;
+installation alone does not guarantee it remains enabled when that setting is off.

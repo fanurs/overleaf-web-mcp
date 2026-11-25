@@ -5,7 +5,7 @@ import { FifoQueue } from '../../src/core/queue.js'
 import { importSession } from './cookies.js'
 import { decryptSession, encryptSession, type EncryptedSession } from './crypto.js'
 import { boundedJson, json } from './http.js'
-import { HostedLogin, type HostedLoginOptions } from './hosted-login.js'
+import { readLoginHistory } from './login-history.js'
 import { runProbe } from './probe.js'
 import { remoteMcpHandler, type RemoteTool } from '../../src/mcp/remote.js'
 import { OPERATIONS } from '../../src/contracts/operations.js'
@@ -36,37 +36,18 @@ const SAFE_CODES = new Set([
   'ROOT_DOCUMENT_MISSING',
   'NO_READABLE_DOCUMENT',
   'SESSION_KEY_INVALID',
-  'LOGIN_REQUIRED',
-  'LOGIN_NOT_FINISHED',
-  'LOGIN_DAILY_LIMIT',
-  'LOGIN_PROJECT_CHANGED',
-  'LOGIN_CLOSE_PENDING',
-  'LOGIN_BROWSER_CLOSED',
-  'LOGIN_VIEW_INVALID',
 ])
 
 /** Serialized access avoids a refresh overwriting a new login or undoing an unlink. */
 export class SessionController {
   readonly #queue = new FifoQueue()
-  readonly #login: HostedLogin | undefined
 
   constructor(
     private readonly storage: SessionStorage,
     private readonly secret: string,
     private readonly owner: string,
-    private readonly probe = runProbe,
-    hostedLogin?: HostedLoginOptions
-  ) {
-    this.#login = hostedLogin ? new HostedLogin(storage, secret, owner, hostedLogin) : undefined
-  }
-
-  async alarm(): Promise<void> {
-    await this.#queue.run(async () => {
-      await this.#login?.tick(async (jar, projectId) => {
-        await this.#save({ jar: JSON.stringify(await jar.serialize()), projectId })
-      })
-    })
-  }
+    private readonly probe = runProbe
+  ) {}
 
   async #save(data: SessionData): Promise<void> {
     await this.storage.put('session', await encryptSession(JSON.stringify(data), this.secret, this.owner))
@@ -146,59 +127,21 @@ export class SessionController {
             projectId: data?.projectId,
             verifiedAt: data?.verifiedAt,
             editTest: data?.editTest,
-            hostedLogin: !!this.#login,
-            login: await this.#login?.status(),
-            usage: (await this.#login?.history()) ?? [],
+            hostedLogin: false,
+            usage: await readLoginHistory(this.storage, this.secret, this.owner),
             serverTime: Date.now(),
           })
         }
         if (request.method === 'GET' && path === '/api/login/history') {
-          const response = json({ sessions: (await this.#login?.history(true)) ?? [] })
+          const response = json({ sessions: await readLoginHistory(this.storage, this.secret, this.owner, true) })
           response.headers.set('Content-Disposition', 'attachment; filename=overleaf-login-usage.json')
           return response
         }
+        // Old tabs and direct calls cannot restart the retired browser flow.
+        if (path.startsWith('/api/login/')) return json({ code: 'HOSTED_LOGIN_RETIRED' }, 410)
         if (request.method !== 'POST') return json({ code: 'NOT_FOUND' }, 404)
-        await this.#login?.expire()
-        if (path.startsWith('/api/login/')) {
-          if (!this.#login) return json({ code: 'HOSTED_LOGIN_UNAVAILABLE' }, 503)
-          if (path === '/api/login/start') {
-            const input = await boundedJson(request)
-            if (
-              typeof input !== 'object' ||
-              input === null ||
-              !('ready' in input) ||
-              input.ready !== true ||
-              !('projectId' in input) ||
-              typeof input.projectId !== 'string'
-            )
-              return json({ code: 'INVALID_INPUT' }, 400)
-            return json(await this.#login.start(input.projectId))
-          }
-          if (path === '/api/login/watch') {
-            await this.#login.watch()
-            return json({ watching: true })
-          }
-          if (path === '/api/login/cancel') {
-            await this.#login.cancel()
-            return json({ loginClosed: true })
-          }
-          if (path === '/api/login/finish') {
-            if (
-              !(await this.#login.status()) &&
-              (await this.#login.history())[0]?.outcome === 'connected' &&
-              (await this.storage.get('session'))
-            ) {
-              return json({ linked: true, verified: false, loginClosed: true })
-            }
-            const { jar, projectId } = await this.#login.finish()
-            await this.#save({ jar: JSON.stringify(await jar.serialize()), projectId })
-            await this.#login.cancel('connected', 'manual')
-            return json({ linked: true, verified: false, loginClosed: true })
-          }
-        }
         if (path === '/api/unlink') {
           await this.storage.delete('session')
-          await this.#login?.cancel()
           return json({ linked: false })
         }
         if (path === '/api/link') {
@@ -209,7 +152,6 @@ export class SessionController {
             return json({ code: 'INVALID_INPUT' }, 400)
           }
           const jar = await importSession(cookies)
-          await this.#login?.cancel()
           await this.#save({ jar: JSON.stringify(await jar.serialize()), projectId })
           return json({ linked: true, verified: false })
         }
@@ -254,7 +196,7 @@ export class SessionController {
             : error instanceof Error && SAFE_CODES.has(error.message)
               ? error.message
               : new URL(request.url).pathname.startsWith('/api/login/')
-                ? 'LOGIN_FAILED'
+                ? 'HISTORY_UNAVAILABLE'
                 : 'PROBE_FAILED'
         return json(
           new URL(request.url).pathname === '/mcp'

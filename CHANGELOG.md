@@ -30,28 +30,20 @@ below. Before 1.0.0, a minor or patch release could change them, and each such c
   session directly to the authenticated private setup service on an explicit click. No cloud
   browser is started, no cookies are displayed or saved locally, and no background transfer
   runs. The reproducible ZIP is available from the private setup page. A real read test is
-  still required; this does not enable the editing MCP.
-- Hosted sign-in now has an untimed preparation page and requires a visible, focused,
-  explicit Start click. The same tab becomes the login window. Startup cancels if the owner
-  switches away before handoff. The server shutdown deadline is sixty seconds including
-  startup, with actual or estimated duration logged if provider delays postpone closure.
-  Requests from the old setup page are refused. Assistants must not start the timed step.
-
-- Cloudflare sign-in automatically saves the session and closes the browser after detecting
-  login, with manual completion retained. Incomplete handoffs close after twenty seconds. The setup
-  page shows elapsed time and a private per-attempt duration/outcome log with complete JSON
-  export, distinguishing Cloudflare-reported browser time from estimates or unavailable data.
-  Shutdown retries persist across restarts and run even before the sixty-second deadline.
-
-- Browser-only Overleaf sign-in through a temporary Cloudflare Browser Run Live View, with
-  encrypted owner-isolated session capture, cancellation, automatic cleanup, and daily attempt
-  limits. The connection page no longer requires a local command or session-file upload.
-  This remains a read-only connection test; a successful university login is not assumed.
-
+  still required before the disposable editing check enables MCP writes.
 - A personal Cloudflare read-only connection probe under `cloudflare/`, with Cloudflare Access
   assertion verification, encrypted session storage in a SQLite Durable Object, and an authenticated
   setup page. It reads one existing text document from the selected project and reports success
   flags, a character count, a protocol name, and whether the configured main document was used. Remote MCP editing is not enabled by this probe.
+
+### Removed
+
+- Retire the fork's optional Cloudflare browser login at the owner's request. Remove its
+  preparation page, timers, launch/finish routes, Puppeteer dependency and `BROWSER` binding.
+  Old authenticated login URLs/actions return HTTP 410 `HOSTED_LOGIN_RETIRED` and cannot
+  allocate a browser. Existing Overleaf sessions and MCP tools remain intact. Historical
+  usage stays readable and exportable from the original encrypted records without a browser
+  binding. No account-wide Browser Run setting is changed.
 
 ### Fixed
 
@@ -69,6 +61,8 @@ below. Before 1.0.0, a minor or patch release could change them, and each such c
 
 ### Documentation
 
+- Browser helper 0.1.2 removes outdated setup-only wording without changing permissions or
+  transfer behavior. Existing 0.1.1 installations continue to work without an update.
 - Explain how to select the Cloudflare deployment branch when the creation form starts from
   `main`, and document the permissions and separate name of the deployment token.
 - Record the Free-only billing requirement, quota failure behavior, separate Overleaf Access
