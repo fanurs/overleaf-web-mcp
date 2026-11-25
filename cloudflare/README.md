@@ -316,8 +316,23 @@ including DCR and PKCE S256. An unauthenticated MCP initialization using curl re
 401 with the expected `WWW-Authenticate` resource-metadata URL. The generic Python
 urllib client received Cloudflare error 1010 for its browser signature; this is a separate
 edge restriction, and does not establish whether the actual ChatGPT client is allowed.
-Do not disable global security protections to hide that distinction. ChatGPT's own
-authorization, tool discovery, and a real tool read remain unverified.
+Do not disable global security protections to hide that distinction.
+
+Later on November 25, the owner connected **Overleaf Web** through the ChatGPT web
+registration flow. Its 12 tools became available in the existing conversation.
+Actual ChatGPT calls to `connection_status`, `list_projects`, `get_project_tree`, and
+`read_file` all succeeded. Status reported the linked project and a passed disposable
+editing test. The read returned 469 characters, an opaque revision, LF newlines, and
+the ShareJS protocol. No proposal content was changed, and no document content or
+private paths are included in this record. This verifies the ChatGPT authentication,
+tool discovery, and live read path. Revision-checked editing remains verified by the
+earlier disposable test; no write to the proposal was used as a connection test.
+These ChatGPT checks used **0 Browser Run seconds**.
+
+The exact callback URI has not yet been obtained from the web connection settings;
+narrowing the registration-time ChatGPT callback allowlist remains follow-up work.
+The existing owner-only policy is still required. Keep the old package listing until
+the owner chooses to remove it; it is not needed for the working web connection.
 
 ### Register in ChatGPT web
 
