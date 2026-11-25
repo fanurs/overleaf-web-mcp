@@ -1,0 +1,22 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "overleaf-private",
+  "version": "0.2.0",
+  "description": "Read, edit and compile the Overleaf project connected to your private service.",
+  "author": {
+    "name": "Fanurs"
+  },
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Overleaf Private",
+        "shortDescription": "Read and edit Overleaf",
+        "longDescription": "Work with the connected Overleaf project through your private Cloudflare service. Supports reading, text and section edits with revision checks, text file creation, and compilation. OAuth sign-in and a saved Overleaf session are required.",
+        "developerName": "Fanurs",
+        "category": "Productivity",
+        "capabilities": [],
+        "defaultPrompt": "Read my connected Overleaf project and help me edit it."
+      }
+    }
+  }
+}

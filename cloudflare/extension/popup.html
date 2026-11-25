@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Connect Overleaf</title>
+<link rel="stylesheet" href="popup.css"></head><body>
+<h1>Connect your existing Overleaf login</h1>
+<p>Helper version 0.1.2</p>
+<p>This uses <strong>zero cloud-browser minutes</strong>. No timer starts.</p>
+<ol><li>Sign into Overleaf in this browser.</li><li>Open and sign into your private setup page using the same setup account as before.</li><li>Check the project URL below and click Connect.</li></ol>
+<p><a href="https://overleaf-mcp.fanurs.com/connect" target="_blank" rel="noopener noreferrer">https://overleaf-mcp.fanurs.com/connect</a></p>
+<label for="project">Overleaf project URL</label><input id="project" type="url" placeholder="https://www.overleaf.com/project/...">
+<p>Connect sends only Overleaf cookies directly to the private service above, which stores them encrypted. Cookies grant account access, not just access to this project. No password or Google/university cookies are read. Nothing is sent to chat or saved in this extension.</p>
+<button id="connect">Connect this Overleaf session</button>
+<p id="status" role="status" aria-live="polite">Ready when you are. Keep this popup open until it finishes.</p>
+<p>You can remove this extension after connecting. Repeat the transfer only if the saved session expires. After transferring a new session, run Test connection and the disposable editing test on the setup page. If ChatGPT is already connected, keep that plugin.</p>
+<script type="module" src="popup.js"></script></body></html>

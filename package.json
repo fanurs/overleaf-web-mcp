@@ -55,17 +55,21 @@
     "zod": "^4.3.2"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "5.20261116.1",
     "@eslint/js": "^9.39.2",
     "@modelcontextprotocol/client": "^2.3.1",
     "@types/node": "^20.19.27",
     "@types/proper-lockfile": "^4.1.4",
     "@types/ws": "^8.18.1",
     "eslint": "^9.39.2",
+    "jose": "6.2.17",
+    "miniflare": "5.20261116.0-beta",
     "prettier": "^3.9.10",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
     "typescript-eslint": "^8.54.0",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.0",
+    "wrangler": "4.163.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -78,7 +82,13 @@
     "login": "node dist/cli.js login",
     "start": "node dist/cli.js",
     "prepack": "npm run build",
-    "prepublishOnly": "npm run check && npm run lint && npm run format:check && npm test"
+    "prepublishOnly": "npm run check && npm run lint && npm run format:check && npm test",
+    "build:extension": "node cloudflare/scripts/package-extension.mjs",
+    "check:cloudflare": "node cloudflare/scripts/package-extension.mjs --check && tsc -p cloudflare/tsconfig.json",
+    "test:cloudflare": "vitest run cloudflare/test",
+    "test:cloudflare:runtime": "node cloudflare/scripts/check-runtime.mjs",
+    "build:cloudflare": "wrangler deploy --config cloudflare/wrangler.jsonc --dry-run --outdir dist",
+    "deploy:cloudflare": "wrangler deploy --config cloudflare/wrangler.jsonc"
   },
   "keywords": [
     "mcp",

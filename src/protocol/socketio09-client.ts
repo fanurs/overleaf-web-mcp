@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { EventEmitter } from 'node:events'
 
 import { McpError } from '../core/errors.js'
@@ -8,6 +9,11 @@ export interface WebSocketPeer extends EventEmitter {
   readyState: number
   send(value: string): void
   close(): void
+}
+
+// Workers and Node declare different isBuffer overloads; keep the narrowing explicit for both.
+function isNodeBuffer(value: unknown): value is Buffer {
+  return Buffer.isBuffer(value)
 }
 
 /** Nothing was sent, so this is an ordinary failure even for a write. */
@@ -81,7 +87,7 @@ export class SocketIo09Peer extends EventEmitter {
   }
 
   #onMessage(raw: unknown): void {
-    const value = Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw)
+    const value = isNodeBuffer(raw) ? raw.toString('utf8') : String(raw)
     let packet
     try {
       packet = parseSocketPacket(value)

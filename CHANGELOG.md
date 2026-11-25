@@ -9,6 +9,72 @@ format, output framing, and exit codes; the `overleaf-web-mcp/core` surface the
 is announced at least one minor version ahead with both names working, and every change is listed
 below. Before 1.0.0, a minor or patch release could change them, and each such change is listed.
 
+## [1.3.0] - Unreleased
+
+### Added
+
+- The private Cloudflare adapter exposes authenticated Streamable HTTP at `/mcp`, with
+  `connection_status` and eleven existing operations for listing the connected project,
+  reading its tree/text/sections, creating text files, revision-checked edits, and compilation/logs.
+  The saved project's allowlist is enforced by the existing service and domain engines;
+  server disk paths, account management, deletion, and uploads are not exposed. Every call
+  closes its Overleaf sockets and persists renewed cookies. Both legacy and modern MCP
+  requests are supported without an idle session stream.
+- Editing and compilation stay locked until an explicit disposable-project test passes.
+  This test creates its own project under an initially empty allowlist, verifies reading,
+  one edit, stale-revision refusal and one compile, and moves the project to Trash. Its
+  private progress persists across interruptions; interrupted creation is never repeated
+  automatically. The setup page retains read verification and test results after reload.
+
+- An optional Chrome/Edge helper under `cloudflare/extension/` transfers an existing Overleaf
+  session directly to the authenticated private setup service on an explicit click. No cloud
+  browser is started, no cookies are displayed or saved locally, and no background transfer
+  runs. The reproducible ZIP is available from the private setup page. A real read test is
+  still required before the disposable editing check enables MCP writes.
+- A personal Cloudflare read-only connection probe under `cloudflare/`, with Cloudflare Access
+  assertion verification, encrypted session storage in a SQLite Durable Object, and an authenticated
+  setup page. It reads one existing text document from the selected project and reports success
+  flags, a character count, a protocol name, and whether the configured main document was used. Remote MCP editing is not enabled by this probe.
+
+### Removed
+
+- Retire the fork's optional Cloudflare browser login at the owner's request. Remove its
+  preparation page, timers, launch/finish routes, Puppeteer dependency and `BROWSER` binding.
+  Old authenticated login URLs/actions return HTTP 410 `HOSTED_LOGIN_RETIRED` and cannot
+  allocate a browser. Existing Overleaf sessions and MCP tools remain intact. Historical
+  usage stays readable and exportable from the original encrypted records without a browser
+  binding. No account-wide Browser Run setting is changed.
+
+### Fixed
+
+- The Cloudflare connection test can read a project when Overleaf does not report a usable
+  configured main document. It chooses an existing editable document from the joined project
+  tree, preferring TeX, without changing settings or document content. The result identifies
+  the selection method; a tree without editable documents returns `NO_READABLE_DOCUMENT`.
+
+- Browser helper 0.1.1 includes the exact root `overleaf.com` host permission needed by
+  Chromium's domain-cookie permission filter. It chooses the cookie store of the selected
+  open project tab and that project's exact URL instead of the popup's default store and a
+  generic path. Missing site access, missing project/store, an empty browser result, and
+  rejected formats have distinct safe errors. Existing installations must replace the
+  unpacked files and reload; no cookies are read automatically.
+
+### Documentation
+
+- Browser helper 0.1.2 removes outdated setup-only wording without changing permissions or
+  transfer behavior. Existing 0.1.1 installations continue to work without an update.
+- Explain how to select the Cloudflare deployment branch when the creation form starts from
+  `main`, and document the permissions and separate name of the deployment token.
+- Record the Free-only billing requirement, quota failure behavior, separate Overleaf Access
+  policy, and the GitHub app permission needed for automatic deployment of a public fork.
+
+### Internal
+
+- Import Node's `Buffer` explicitly in the Socket.IO adapter so its type guard remains correct
+  when the shared protocol engine is compiled alongside Cloudflare runtime types.
+- Check the Cloudflare bundle in CI with local workerd, synthetic Access assertions, and SQLite
+  Durable Object storage. The check needs no cloud credentials or live Overleaf project.
+
 ## [1.2.0] - 2026-11-14
 
 Cheaper for agents. An agent can now find text without reading every document (`search_project`),

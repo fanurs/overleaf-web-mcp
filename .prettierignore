@@ -1,4 +1,6 @@
 dist/
+cloudflare/dist/
+.wrangler/
 coverage/
 site/
 node_modules/

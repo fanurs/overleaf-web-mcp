@@ -1,0 +1,16 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "overleaf-mcp",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-11-16",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "keep_vars": true,
+  "routes": [{ "pattern": "overleaf-mcp.fanurs.com", "custom_domain": true }],
+  "observability": { "enabled": false },
+  "durable_objects": {
+    "bindings": [{ "name": "SESSIONS", "class_name": "OverleafSession" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["OverleafSession"] }]
+}
